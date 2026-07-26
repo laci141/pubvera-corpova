@@ -210,5 +210,61 @@ ctx(`downloadCSV('consensus_studies','t.csv');`);
 check('S4 empty view alert', alerts[alerts.length - 1], 'Run an analysis first — or clear the filters, nothing is visible.');
 check('S4 no file downloaded', downloads.length, before);
 
+// ── scenario 5: citation keys must be unique ACROSS separate exports ─────
+// Two analyses exported one after another end up in the same Zotero/Mendeley
+// library. A key that repeats there silently overwrites the earlier entry, so
+// "unique within one file" is not enough — it has to hold between files too.
+const keysOf = text => [...text.matchAll(/@\w+\s*\{\s*([^,\s]+)\s*,/g)].map(m => m[1]);
+const overlap = (a, b) => a.filter(k => b.includes(k));
+
+function bibKeysFor(claim, key, stored) {
+  ctx(`lastQuery = ${JSON.stringify(claim)};
+       lastData[${JSON.stringify(key)}] = ${JSON.stringify(stored)};
+       downloadBibTeX(${JSON.stringify(key)}, 'x.bib');`);
+  return keysOf(downloads[downloads.length - 1].text);
+}
+
+// 5a: every summary export type (@misc path), two different claims.
+const summaryShapes = {
+  consensus_verdict:     c => ({ analysis: [{ claim: c, verdict: 'evidence-supports', consensus_score: 0.8 }], response: {} }),
+  compare_summary:       c => ({ rows: [{ claim: c, verdict: 'evidence-supports' }], response: {} }),
+  controversies_summary: c => ({ rows: [{ claim: c, controversy_score: 0.4, contested: true }], response: {} }),
+  gaps_findings:         c => ({ rows: [{ kind: 'no-rct', detail: 'no randomized trial for ' + c }], response: {} }),
+  evidence_pyramid:      c => ({ rows: [{ design: 'rct', count: 4, pct: 25 }], response: {} }),
+};
+const claim5a = 'magnesium lowers blood pressure';
+const claim5b = 'vitamin D prevents fractures';
+Object.keys(summaryShapes).forEach(key => {
+  const ka = bibKeysFor(claim5a, key, summaryShapes[key](claim5a));
+  const kb = bibKeysFor(claim5b, key, summaryShapes[key](claim5b));
+  check(`S5 ${key}: two claims share no citation key`, overlap(ka, kb), []);
+});
+
+// 5b: @article keys are index-derived (firstWord + year + "_" + i), so two
+// unrelated papers that happen to share a first word and a year collide.
+// controversies_studies has no registered view provider here, so this goes
+// through the unfiltered fallback path.
+const paperKeysA = bibKeysFor(claim5a, 'controversies_studies',
+  [{ title: 'Effects of magnesium on blood pressure', year: 2013, doi: '10.1/a' }]);
+const paperKeysB = bibKeysFor(claim5b, 'controversies_studies',
+  [{ title: 'Effects of vitamin D on fracture risk', year: 2013, doi: '10.1/b' }]);
+check('S5 @article: different papers get different keys', overlap(paperKeysA, paperKeysB), []);
+
+// 5d: the claim slug is cut to whole words at 28 chars, so two DIFFERENT
+// claims can share a slug. They must still get different keys — otherwise one
+// analysis silently replaces the other on import, which is NOT the accepted
+// "same claim twice" merge.
+const longA = 'vitamin D prevents fractures in elderly women';
+const longB = 'vitamin D prevents fractures in men';
+check('S5 claims sharing a truncated slug get different keys',
+  overlap(bibKeysFor(longA, 'consensus_verdict', summaryShapes.consensus_verdict(longA)),
+          bibKeysFor(longB, 'consensus_verdict', summaryShapes.consensus_verdict(longB))), []);
+
+// 5c: guard rail for the fix — a claim carrying non-ASCII text must still
+// produce a key BibTeX compilers accept.
+const accentedClaim = 'a szívinfarktus kockázata csökken';
+const accentedKeys = bibKeysFor(accentedClaim, 'consensus_verdict', summaryShapes.consensus_verdict(accentedClaim));
+check('S5 keys stay ASCII/BibTeX-safe', accentedKeys.filter(k => !/^[A-Za-z0-9_:.-]+$/.test(k)), []);
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

@@ -417,6 +417,31 @@
       .excluded-section-body { padding: 0 0.8rem 0.6rem; }
     }
 
+    /* Collapsible bottom section for the complete analyzed corpus. Same shape
+       as .excluded-section, neutral accent — it is not a warning. */
+    .all-studies-section {
+      margin-top: 1.5rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(0, 212, 255, 0.22);
+      border-radius: 0.6rem;
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+    }
+    .all-studies-section summary {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #67e8f9;
+      padding: 0.8rem 1rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .all-studies-section summary:hover { color: #a5f3fc; }
+    .all-studies-body { padding: 0 1rem 0.8rem; }
+    @media (max-width: 600px) {
+      .all-studies-section summary { padding: 0.6rem 0.8rem; }
+      .all-studies-body { padding: 0 0.8rem 0.6rem; }
+    }
+
     /* Muted label under heuristic scores: the number is algorithmic and
        computed from every retrieved study, independent of the AI filter. */
     .score-note {
@@ -1020,7 +1045,7 @@
     // Summary keys hold { rows, response } so CSV/Excel get the flat summary
     // row while the JSON button downloads the full API response too.
     const lastData = {
-      consensus_verdict: null, consensus_studies: null, consensus_excluded: null,
+      consensus_verdict: null, consensus_studies: null, consensus_all: null, consensus_excluded: null,
       evidence_pyramid: null,
       compare_summary: null, compare_studies: null, compare_excluded: null,
       gaps_findings: null,
@@ -1035,6 +1060,7 @@
     const ANALYSIS_LABEL = {
       consensus_verdict: 'Consensus analysis',
       consensus_studies: 'Consensus study list',
+      consensus_all: 'All analyzed studies',
       consensus_excluded: 'Excluded studies (PRISMA)',
       evidence_pyramid: 'Evidence pyramid analysis',
       compare_summary: 'Claim comparison',
@@ -1236,25 +1262,105 @@
     }
 
     // BibTeX: @article for paper lists, @misc for analyses.
-    function bibKey(r, i) {
-      const t = String(r.title || r.display_name || 'item').split(/\s+/)[0].replace(/[^A-Za-z0-9]/g, '');
+    //
+    // ── Citation keys ──────────────────────────────────────────────────────
+    // A reference manager keys on the citation key: two entries sharing one
+    // are merged, and the later import silently replaces the earlier. So a key
+    // must identify the *thing*, and identify it the same way in every file it
+    // ever appears in — it must never depend on what else happened to be
+    // exported alongside it. EXPORT_FIX_EVIDENCE.md carries the measurements
+    // behind the shape chosen here.
+    const KEY_STOPWORDS = new Set(('a an the of on in for and to is are was were ' +
+      'does do can vs versus with').split(' '));
+
+    // Split text into ASCII-only, stopword-free key words. NFD splits an
+    // accented letter into base + combining mark, so dropping U+0300..U+036F
+    // turns "szívinfarktus" into "szivinfarktus"; everything else outside
+    // [a-z0-9] (punctuation, dashes, emoji, non-decomposing letters such as ß)
+    // collapses to a separator. BibTeX compilers reject non-ASCII keys.
+    function keyWords(s) {
+      return String(s == null ? '' : s)
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]+/g, ' ')
+        .trim().split(/\s+/).filter(w => w && !KEY_STOPWORDS.has(w));
+    }
+
+    // Whole words up to maxLen — never cut mid-word; a chopped word reads as a
+    // typo in a bibliography.
+    function asciiSlug(s, maxLen, fallback) {
+      const out = [];
+      let len = 0;
+      for (const w of keyWords(s)) {
+        const add = out.length ? w.length + 1 : w.length;
+        if (len + add > maxLen) break;
+        out.push(w); len += add;
+      }
+      return out.join('_') || fallback;
+    }
+
+    // Deterministic 3-char base36 fingerprint (FNV-1a). Deterministic is the
+    // point: the same paper exported twice must yield the same key so the
+    // reference manager merges instead of duplicating. Three characters only
+    // ever has to separate entries that already share a base key — measured
+    // groups of 2-3 works — so 36^3 is ample there.
+    function hash3(s) {
+      let h = 0x811c9dc5;
+      const t = String(s == null ? '' : s);
+      for (let i = 0; i < t.length; i++) {
+        h ^= t.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      return ('00' + h.toString(36)).slice(-3);
+    }
+
+    function normDoi(v) {
+      return String(v == null ? '' : v).replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').trim();
+    }
+
+    // Last-resort guard, one Set per exported file. Only reachable when two
+    // rows are genuinely indistinguishable (same normalized title, neither
+    // carrying a DOI) — the fingerprint separates everything else.
+    function uniqueKey(base, used) {
+      if (!used.has(base)) { used.add(base); return base; }
+      for (let i = 0; ; i++) {
+        const k = base + '_' + String.fromCharCode(97 + (i % 26)) + (i < 26 ? '' : Math.floor(i / 26));
+        if (!used.has(k)) { used.add(k); return k; }
+      }
+    }
+
+    // @article key: <firstTitleWord><year><secondTitleWord>_<fingerprint>.
+    //
+    // The fingerprint is ALWAYS appended, never only on collision. A key that
+    // grows a suffix depending on its neighbours would give the same paper two
+    // different keys in two different files — destroying exactly the merge the
+    // content-derived key exists to enable. Measured on the 2026-07-24 corpora
+    // (246 works): 9.3% would share a bare <w1><year><w2>, the clashes cluster
+    // on topic words (omega20183, vitamin2013d) and a Corpova export is always
+    // single-topic, while 98.0% carry a DOI to fingerprint.
+    //
+    // When the CLI starts emitting an author, the first author's surname
+    // belongs in front of the year. Do not pre-build that here — the field is
+    // not shipped yet and its name is not settled.
+    function bibKey(r, used) {
+      const w = keyWords(r.title || r.display_name);
       const y = Number(r.year || r.publication_year || 0) || '';
-      return (t || 'ref').toLowerCase() + (y || '') + '_' + (i + 1);
+      const id = normDoi(r.doi || r.DOI) || w.join(' ');
+      return uniqueKey((w[0] || 'ref') + y + (w[1] || '') + '_' + hash3(id), used);
     }
     function bibEsc(v) { return String(v == null ? '' : v).replace(/[{}\\]/g, '').trim(); }
 
-    function toBibTeX(rows) {
+    function toBibTeX(rows, used) {
       const out = [];
-      rows.forEach((r, i) => {
+      rows.forEach(r => {
         const title = bibEsc(r.title || r.display_name || '');
         if (!title) return;
-        const doi = String(r.doi || r.DOI || '').replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').trim();
+        const doi = normDoi(r.doi || r.DOI);
         const year = Number(r.year || r.publication_year || 0);
         const journal = bibEsc(r.journal || r.source || r.venue || '');
         const authors = Array.isArray(r.authors)
           ? r.authors.map(a => bibEsc(typeof a === 'string' ? a : (a && (a.name || a.author_name) || ''))).filter(Boolean).join(' and ')
           : bibEsc(r.authors || r.author || '');
-        const lines = ['@article{' + bibKey(r, i) + ','];
+        const lines = ['@article{' + bibKey(r, used) + ','];
         lines.push('  title   = {' + title + '},');
         if (authors) lines.push('  author  = {' + authors + '},');
         if (journal) lines.push('  journal = {' + journal + '},');
@@ -1268,16 +1374,40 @@
       return out.join('\n\n') + '\n';
     }
 
+    // Short, stable name per analysis for the @misc key.
+    const ANALYSIS_SLUG = {
+      consensus_verdict: 'consensus', compare_summary: 'compare',
+      controversies_summary: 'controversies', gaps_findings: 'gaps',
+      evidence_pyramid: 'evidence'
+    };
+
     // Analyses with no papers to cite (summary rows, pyramid, gap findings)
     // get a dataset-style @misc citation of the analysis itself.
-    function analysisBibTeX(key, rows) {
+    //
+    // Key: corpova_<analysis>_<claimSlug>_<fingerprint>_<YYYYMMDD>. The slug is
+    // cut to whole words at 28 chars for readability, so the fingerprint is
+    // taken from the FULL normalized claim — otherwise "vitamin D prevents
+    // fractures in elderly women" and "... in men" would slug identically and
+    // one analysis would silently replace the other on import.
+    //
+    // Same claim, same analysis, same day → same key, on purpose: it is the
+    // same analysis, so Zotero/Mendeley should merge the two entries rather
+    // than file two copies. The one case this loses is a same-day re-run with a
+    // different provider reaching a different verdict — that entry replaces the
+    // earlier one. Accepted trade-off (2026-07-26).
+    function analysisBibTeX(key, rows, used) {
       const label = ANALYSIS_LABEL[key] || 'Evidence analysis';
       let scope = '';
       const metaEl = document.querySelector('.meta-row[data-key="' + key + '"] .meta');
       if (metaEl) scope = metaEl.textContent.replace(/\s*·\s*\d+\s*\/\s*\d+\s*rows\s*$/, '').trim();
-      const y = new Date().getFullYear();
+      const now = new Date();
+      const y = now.getFullYear();
+      const stamp = y + ('0' + (now.getMonth() + 1)).slice(-2) + ('0' + now.getDate()).slice(-2);
+      const base = 'corpova_' + (ANALYSIS_SLUG[key] || asciiSlug(key, 24, 'analysis')) +
+        '_' + asciiSlug(lastQuery, 28, 'untitled') +
+        '_' + hash3(keyWords(lastQuery).join(' ')) + '_' + stamp;
       const title = bibEsc(label + (scope ? ': ' + scope : ''));
-      return '@misc{corpova_' + key + '_' + y + ',\n' +
+      return '@misc{' + uniqueKey(base, used) + ',\n' +
         '  title  = {' + title + '},\n' +
         '  author = {{Corpova}},\n' +
         '  year   = {' + y + '},\n' +
@@ -1294,8 +1424,10 @@
       const v = exportRows(key);
       if (raw && raw.length && !v.rows.length) { alert('Run an analysis first — or clear the filters, nothing is visible.'); return; }
       const papers = v.rows.filter(r => r && (r.title || r.display_name));
+      // One key namespace per exported file.
+      const used = new Set();
       const text = '% ' + exportHeader(key, v.rows, v.scope) + '\n\n' +
-        (papers.length ? toBibTeX(papers) : analysisBibTeX(key, v.rows));
+        (papers.length ? toBibTeX(papers, used) : analysisBibTeX(key, v.rows, used));
       triggerDownload(new Blob([text], { type: 'application/x-bibtex;charset=utf-8' }), filename);
     }
 
@@ -1340,7 +1472,7 @@
       const csvName = String(filename).replace(/\.json$/i, '.csv');
       const xlsxName = String(filename).replace(/\.json$/i, '.xlsx');
       const bibName = String(filename).replace(/\.json$/i, '.bib');
-      const bibTitle = /_studies$|_excluded$/.test(key)
+      const bibTitle = /_studies$|_excluded$|_all$/.test(key)
         ? 'BibTeX citations for these papers'
         : 'BibTeX citation for this analysis (@misc)';
       return '<div class="meta-row" data-key="' + key + '"><span class="meta">' + text + '<span class="qcount"></span></span>' +
@@ -1617,6 +1749,29 @@
       return group('Supporting studies', supporting) + group('Refuting studies', refuting);
     }
 
+    // Collapsible "All analyzed studies" section: the complete post-relevance-
+    // gate list the CLI returns in all_studies. The Supporting / Refuting
+    // columns above show only the CLI's top 3 per side, so without this section
+    // every other analyzed work is off-screen — and an export may only ever
+    // carry what is on screen. Making them visible is what lets them be
+    // exported at all. Its own data-key and its own .qfilter, so it gets its
+    // own view provider (a meta-row without a filter is skipped — see
+    // bindExportViews); rows are .study-card so scopeItems pairs them by
+    // render order. Collapsed by default, like the Excluded section.
+    function renderAllStudiesSection(all, key, filename) {
+      const works = Array.isArray(all) ? all : [];
+      lastData[key] = works.map(w => studyRow(w, 'analyzed'));
+      if (!works.length) return '';
+      const body = metaRow(works.length + ' analyzed ' + (works.length === 1 ? 'study' : 'studies') +
+          ' · the full list the score was computed from', key, filename) +
+        works.map(w => renderStudyCard(w, null)).join('');
+      return `
+        <details class="all-studies-section">
+          <summary>All analyzed studies (${works.length})</summary>
+          <div class="all-studies-body">${body}</div>
+        </details>`;
+    }
+
     // Collapsible "Excluded by AI Filter" section at the bottom of a result.
     // Two layers so no exclusion is ever lost: (a) cards pulled out of the main
     // columns (items: { work, ex, claimLabel? }), grouped by claim when labels
@@ -1755,7 +1910,7 @@
             ${heuristicScoreNote()}
             ${metaRow(studies.length + ' studies shown', 'consensus_studies', 'corpova-consensus-studies.json')}
             ${groups}
-          </div>${renderExcludedSection(sink, 'consensus_excluded', 'corpova-consensus-excluded.json')}`;
+          </div>${renderAllStudiesSection(result.all_studies, 'consensus_all', 'corpova-consensus-all-studies.json')}${renderExcludedSection(sink, 'consensus_excluded', 'corpova-consensus-excluded.json')}`;
       }
 
       if (endpoint === 'evidence') {
