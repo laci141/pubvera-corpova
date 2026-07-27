@@ -662,22 +662,25 @@
        grey, not green: measured, small corpora are the most likely to produce
        a false unanimous verdict (5 of 10 works were the same Cochrane review),
        so it must not read as the safe choice. */
-    .limit-wrap{position:relative;margin:.2rem 0 1.9rem}
-    .limit-slider{-webkit-appearance:none;appearance:none;width:100%;height:6px;
-      border-radius:3px;outline:none;padding:0;margin:0;cursor:pointer;
-      background:linear-gradient(to right,
-        rgba(255,255,255,.20) 0 11.1%,
-        #2fd6a6 13.9% 19.4%,
-        #ffab4c 22.2% 100%)}
+    .limit-wrap{position:relative;margin:.2rem 0 2.3rem}
+    /* .form-group input sets background, border and padding, and as a
+       (class + element) selector it outranks a bare .limit-slider class --
+       which is why the track rendered as an empty bordered box. Qualifying
+       with the element name wins without touching the existing rule. */
+    .form-group input.limit-slider{-webkit-appearance:none;appearance:none;width:100%;
+      height:8px;border:none;border-radius:4px;outline:none;padding:0;margin:0;cursor:pointer;
+      background:rgba(255,255,255,.13)}
+    .form-group input.limit-slider:focus{box-shadow:none;border:none}
     .limit-slider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;
       border-radius:50%;background:#e8eef7;border:2px solid #0b0f1a;cursor:pointer}
     .limit-slider::-moz-range-thumb{width:18px;height:18px;border-radius:50%;
       background:#e8eef7;border:2px solid #0b0f1a;cursor:pointer}
-    .limit-slider::-moz-range-track{height:6px;border-radius:3px;background:transparent}
-    .limit-tick{position:absolute;top:15px;font-size:.7rem;color:#8a92a6}
-    .limit-tick-min{left:0}
-    .limit-tick-mid{left:16.7%;transform:translateX(-50%)}
-    .limit-tick-max{right:0}
+    .limit-slider::-moz-range-track{height:8px;border-radius:4px;background:transparent}
+    /* Ticks are placed in px by JS, not %, because the 18px thumb never
+       reaches the track ends: value v sits at 9px + frac * (width - 18px). */
+    .limit-tick{position:absolute;top:19px;font-size:1rem;color:#b3b8c5;transform:translateX(-50%)}
+    .limit-zone-mark{position:absolute;top:-3px;width:2px;height:14px;border-radius:1px;
+      background:#b3b8c5;opacity:.55}
 
     .limit-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:.7rem}
     .limit-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
@@ -834,9 +837,10 @@
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="consensusLimit" class="limit-slider" min="10" max="100" step="5" value="25">
-          <span class="limit-tick limit-tick-min">10</span>
-          <span class="limit-tick limit-tick-mid">25</span>
-          <span class="limit-tick limit-tick-max">100</span>
+          <span class="limit-zone-mark" id="consensusLimitMark"></span>
+          <span class="limit-tick" id="consensusLimitTick10">10</span>
+          <span class="limit-tick" id="consensusLimitTick25">25</span>
+          <span class="limit-tick" id="consensusLimitTick100">100</span>
         </div>
         <div class="limit-cards">
           <div class="limit-card">
@@ -897,9 +901,10 @@
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="evidenceLimit" class="limit-slider" min="10" max="100" step="5" value="25">
-          <span class="limit-tick limit-tick-min">10</span>
-          <span class="limit-tick limit-tick-mid">25</span>
-          <span class="limit-tick limit-tick-max">100</span>
+          <span class="limit-zone-mark" id="evidenceLimitMark"></span>
+          <span class="limit-tick" id="evidenceLimitTick10">10</span>
+          <span class="limit-tick" id="evidenceLimitTick25">25</span>
+          <span class="limit-tick" id="evidenceLimitTick100">100</span>
         </div>
         <div class="limit-cards">
           <div class="limit-card">
@@ -962,9 +967,10 @@
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="compareLimit" class="limit-slider" min="10" max="100" step="5" value="25">
-          <span class="limit-tick limit-tick-min">10</span>
-          <span class="limit-tick limit-tick-mid">25</span>
-          <span class="limit-tick limit-tick-max">100</span>
+          <span class="limit-zone-mark" id="compareLimitMark"></span>
+          <span class="limit-tick" id="compareLimitTick10">10</span>
+          <span class="limit-tick" id="compareLimitTick25">25</span>
+          <span class="limit-tick" id="compareLimitTick100">100</span>
         </div>
         <div class="limit-cards">
           <div class="limit-card">
@@ -1025,9 +1031,10 @@
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="gapsLimit" class="limit-slider" min="10" max="100" step="5" value="25">
-          <span class="limit-tick limit-tick-min">10</span>
-          <span class="limit-tick limit-tick-mid">25</span>
-          <span class="limit-tick limit-tick-max">100</span>
+          <span class="limit-zone-mark" id="gapsLimitMark"></span>
+          <span class="limit-tick" id="gapsLimitTick10">10</span>
+          <span class="limit-tick" id="gapsLimitTick25">25</span>
+          <span class="limit-tick" id="gapsLimitTick100">100</span>
         </div>
         <div class="limit-cards">
           <div class="limit-card">
@@ -1088,9 +1095,10 @@
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="controversiesLimit" class="limit-slider" min="10" max="100" step="5" value="25">
-          <span class="limit-tick limit-tick-min">10</span>
-          <span class="limit-tick limit-tick-mid">25</span>
-          <span class="limit-tick limit-tick-max">100</span>
+          <span class="limit-zone-mark" id="controversiesLimitMark"></span>
+          <span class="limit-tick" id="controversiesLimitTick10">10</span>
+          <span class="limit-tick" id="controversiesLimitTick25">25</span>
+          <span class="limit-tick" id="controversiesLimitTick100">100</span>
         </div>
         <div class="limit-cards">
           <div class="limit-card">
@@ -1207,6 +1215,11 @@
         if (target && !target.value.trim()) target.value = hero.value.trim();
       }
       modal.classList.add('active');
+      // A hidden modal has clientWidth 0, so tick positions measured before it
+      // opened are wrong. Recompute now that the panel has real width.
+      if (typeof paintLimit === 'function') {
+        requestAnimationFrame(() => paintLimit(endpoint));
+      }
     }
 
     function closeModal(endpoint) {
@@ -2287,11 +2300,35 @@
       };
     }
 
+    // Pixel position of a slider value. The thumb is 18px wide and its centre
+    // never reaches either end, so a percentage of the full track is wrong by
+    // up to 9px -- enough to put the "25" label visibly off its own notch.
+    const LIMIT_THUMB = 18;
+    function limitPosPx(v, width) {
+      return 9 + ((v - 10) / 90) * (width - LIMIT_THUMB);
+    }
+
     function paintLimit(ep) {
       const slider = document.getElementById(`${ep}Limit`);
       if (!slider) return;
       const v = parseInt(slider.value, 10);
       const t = limitZoneText(v);
+      const wrap = slider.parentElement;
+      const w = (wrap && wrap.clientWidth) || slider.clientWidth || 0;
+      if (w > LIMIT_THUMB) {
+        [10, 25, 100].forEach(n => {
+          const tick = document.getElementById(`${ep}LimitTick${n}`);
+          if (tick) tick.style.left = limitPosPx(n, w) + 'px';
+        });
+        const mark = document.getElementById(`${ep}LimitMark`);
+        if (mark) mark.style.left = (limitPosPx(25, w) - 1) + 'px';
+        // The filled part carries the CURRENT zone colour, so the track
+        // changes while dragging instead of showing a fixed three-zone band.
+        const fill = v <= 20 ? 'rgba(255,255,255,.42)' : (v <= 27 ? '#2fd6a6' : '#ffab4c');
+        const stop = (limitPosPx(v, w) / w * 100).toFixed(2) + '%';
+        slider.style.background =
+          `linear-gradient(to right, ${fill} 0 ${stop}, rgba(255,255,255,.13) ${stop} 100%)`;
+      }
       const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
       set(`${ep}LimitVal`, String(v));
       set(`${ep}LimitAi`, v <= AI_REVIEW_CAP ? `${v} of ${v}` : `${AI_REVIEW_CAP} of ${v}`);
@@ -2307,6 +2344,10 @@
       if (slider) {
         slider.addEventListener('input', () => paintLimit(ep));
         paintLimit(ep);
+        // A modal is laid out at width 0 until it opens, so the first paint
+        // has nothing to measure. Repaint on resize and shortly after load.
+        window.addEventListener('resize', () => paintLimit(ep));
+        setTimeout(() => paintLimit(ep), 80);
       }
       const provElem = document.getElementById(`${ep}Provider`);
       if (provElem) provElem.addEventListener('change', () => syncModelField(ep));
