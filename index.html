@@ -657,15 +657,32 @@
     }
 
     /* EXPORT META ROW (download buttons + quick filter) */
-    .meta-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;gap:12px;flex-wrap:wrap}
+    /* 3px keret-tavolsag mindket oldalon, hogy a gombok soha ne erjenek a
+       panel szelehez -- mobilon ez volt a legzavarobb. */
+    .meta-row{display:flex;justify-content:space-between;align-items:flex-start;
+      margin-bottom:.6rem;gap:12px;flex-wrap:wrap;padding-left:3px;padding-right:3px}
     .meta{font-size:.82rem;color:#99a}
     .dl{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#cdd6ea;
       padding:4px 14px;border-radius:999px;font-size:.75rem;font-weight:600;cursor:pointer;
       transition:.2s;white-space:nowrap;flex-shrink:0}
     .dl:hover{background:rgba(255,255,255,.15);border-color:var(--color,#00d4ff);color:#fff}
-    .dl-group{display:flex;gap:8px;flex-shrink:0;align-items:center;flex-wrap:wrap}
+    /* Ket fix sor, nem wrap: 1. sor szuro+BibTeX+Excel, 2. sor CSV+JSON.
+       A wrap azert nem jo, mert a sortores a szuromezo szelessegetol fuggne,
+       es kepernyomeretenkent mashol torne el. */
+    .dl-group{display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end}
+    .dl-line{display:flex;gap:8px;align-items:center;justify-content:flex-end}
     .qfilter{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.16);border-radius:999px;
-      padding:4px 14px;color:#e8eef7;font-size:.78rem;width:190px}
+      padding:4px 14px;color:#e8eef7;font-size:.78rem;width:190px;max-width:100%;min-width:0}
+
+    /* Mobil: a gombsor sajat sorba kerul es kitolti a szelesseget, a szuromezo
+       pedig rugalmasan zsugorodik, hogy a BibTeX/Excel par ne csusszon ki. */
+    @media (max-width: 600px) {
+      .meta-row{flex-direction:column;align-items:stretch}
+      .dl-group{align-items:stretch;width:100%}
+      .dl-line{justify-content:flex-start;width:100%}
+      .qfilter{flex:1 1 auto;width:auto}
+      .dl{flex:0 0 auto}
+    }
     .qfilter:focus{outline:none;border-color:var(--color,#00d4ff)}
     .qcount{color:#7dd3fc;font-size:.78rem;font-weight:600;margin-left:6px}
 
@@ -1506,11 +1523,17 @@
         : 'BibTeX citation for this analysis (@misc)';
       return '<div class="meta-row" data-key="' + key + '"><span class="meta">' + text + '<span class="qcount"></span></span>' +
         '<span class="dl-group">' +
+        // 1. sor: szuromezo (ha van) + BibTeX + Excel
+        '<span class="dl-line">' +
         (withFilter ? '<input class="qfilter" type="text" placeholder="🔍 Filter results…">' : '') +
         '<button class="dl" title="' + bibTitle + '" onclick="downloadBibTeX(\'' + key + '\',\'' + bibName + '\')">⬇ BibTeX</button>' +
         '<button class="dl" onclick="downloadXLSX(\'' + key + '\',\'' + xlsxName + '\')">⬇ Excel</button>' +
+        '</span>' +
+        // 2. sor: CSV + JSON
+        '<span class="dl-line">' +
         '<button class="dl" onclick="downloadCSV(\'' + key + '\',\'' + csvName + '\')">⬇ CSV</button>' +
         '<button class="dl" onclick="downloadJSON(\'' + key + '\',\'' + filename + '\')">⬇ JSON</button>' +
+        '</span>' +
         '</span></div>';
     }
 
