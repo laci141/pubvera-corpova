@@ -656,6 +656,52 @@
       }
     }
 
+    /* LIMIT SLIDER: three zones + live panel.
+       The track colour changes at 25 because that is where AI coverage drops
+       from 100% to a subset -- maxStudiesForLLM in providers.go. Quick zone is
+       grey, not green: measured, small corpora are the most likely to produce
+       a false unanimous verdict (5 of 10 works were the same Cochrane review),
+       so it must not read as the safe choice. */
+    .limit-wrap{position:relative;margin:.2rem 0 1.9rem}
+    .limit-slider{-webkit-appearance:none;appearance:none;width:100%;height:6px;
+      border-radius:3px;outline:none;padding:0;margin:0;cursor:pointer;
+      background:linear-gradient(to right,
+        rgba(255,255,255,.20) 0 11.1%,
+        #2fd6a6 13.9% 19.4%,
+        #ffab4c 22.2% 100%)}
+    .limit-slider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;
+      border-radius:50%;background:#e8eef7;border:2px solid #0b0f1a;cursor:pointer}
+    .limit-slider::-moz-range-thumb{width:18px;height:18px;border-radius:50%;
+      background:#e8eef7;border:2px solid #0b0f1a;cursor:pointer}
+    .limit-slider::-moz-range-track{height:6px;border-radius:3px;background:transparent}
+    .limit-tick{position:absolute;top:15px;font-size:.7rem;color:#8a92a6}
+    .limit-tick-min{left:0}
+    .limit-tick-mid{left:16.7%;transform:translateX(-50%)}
+    .limit-tick-max{right:0}
+
+    .limit-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:.7rem}
+    .limit-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+      border-radius:.6rem;padding:.6rem .75rem;
+      backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px)}
+    .limit-card-label{font-size:.72rem;color:#99a;margin-bottom:3px;line-height:1.3}
+    .limit-card-num{font-size:1.25rem;font-weight:600;color:#e8eef7;line-height:1.2}
+
+    .limit-panel{border-radius:.7rem;padding:.7rem .85rem;font-size:.85rem;line-height:1.55;
+      background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+      backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px)}
+    .limit-panel.zone-rec{background:rgba(47,214,166,.10);border-color:rgba(47,214,166,.35)}
+    .limit-panel.zone-broad{background:rgba(255,171,76,.09);border-color:rgba(255,171,76,.32)}
+    .limit-panel-head{font-weight:600;margin-bottom:5px;color:#cdd6ea}
+    .limit-panel.zone-rec .limit-panel-head{color:#2fd6a6}
+    .limit-panel.zone-broad .limit-panel-head{color:#ffab4c}
+    .limit-panel-body{color:#99a}
+    .limit-panel-warn{margin-top:6px;color:#ffc978}
+    .limit-panel-warn:empty{margin-top:0}
+
+    @media (max-width: 600px){
+      .limit-cards{grid-template-columns:1fr}
+    }
+
     /* EXPORT META ROW (download buttons + quick filter) */
     /* 3px keret-tavolsag mindket oldalon, hogy a gombok soha ne erjenek a
        panel szelehez -- mobilon ez volt a legzavarobb. */
@@ -786,9 +832,27 @@
         <input type="text" id="consensusModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="consensusModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="consensusLimit" min="10" max="200" value="10" style="width: 100%;">
-        <span id="consensusLimitVal">10</span>
-        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
+        <div class="limit-wrap">
+          <input type="range" id="consensusLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <span class="limit-tick limit-tick-min">10</span>
+          <span class="limit-tick limit-tick-mid">25</span>
+          <span class="limit-tick limit-tick-max">100</span>
+        </div>
+        <div class="limit-cards">
+          <div class="limit-card">
+            <div class="limit-card-label">Studies retrieved &amp; scored</div>
+            <div class="limit-card-num" id="consensusLimitVal">25</div>
+          </div>
+          <div class="limit-card">
+            <div class="limit-card-label">Studies the AI reads</div>
+            <div class="limit-card-num" id="consensusLimitAi">25 of 25</div>
+          </div>
+        </div>
+        <div class="limit-panel zone-rec" id="consensusLimitPanel">
+          <div class="limit-panel-head" id="consensusLimitHead">25 · Recommended</div>
+          <div class="limit-panel-body" id="consensusLimitBody"></div>
+          <div class="limit-panel-warn" id="consensusLimitWarn"></div>
+        </div>
         <button class="btn" onclick="runAnalysis('consensus')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="consensusResults" style="display: none;"></div>
@@ -831,9 +895,27 @@
         <input type="text" id="evidenceModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="evidenceModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="evidenceLimit" min="10" max="200" value="10" style="width: 100%;">
-        <span id="evidenceLimitVal">10</span>
-        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
+        <div class="limit-wrap">
+          <input type="range" id="evidenceLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <span class="limit-tick limit-tick-min">10</span>
+          <span class="limit-tick limit-tick-mid">25</span>
+          <span class="limit-tick limit-tick-max">100</span>
+        </div>
+        <div class="limit-cards">
+          <div class="limit-card">
+            <div class="limit-card-label">Studies retrieved &amp; scored</div>
+            <div class="limit-card-num" id="evidenceLimitVal">25</div>
+          </div>
+          <div class="limit-card">
+            <div class="limit-card-label">Studies the AI reads</div>
+            <div class="limit-card-num" id="evidenceLimitAi">25 of 25</div>
+          </div>
+        </div>
+        <div class="limit-panel zone-rec" id="evidenceLimitPanel">
+          <div class="limit-panel-head" id="evidenceLimitHead">25 · Recommended</div>
+          <div class="limit-panel-body" id="evidenceLimitBody"></div>
+          <div class="limit-panel-warn" id="evidenceLimitWarn"></div>
+        </div>
         <button class="btn" onclick="runAnalysis('evidence')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="evidenceResults" style="display: none;"></div>
@@ -878,9 +960,27 @@
         <input type="text" id="compareModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="compareModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="compareLimit" min="10" max="200" value="10" style="width: 100%;">
-        <span id="compareLimitVal">10</span>
-        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
+        <div class="limit-wrap">
+          <input type="range" id="compareLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <span class="limit-tick limit-tick-min">10</span>
+          <span class="limit-tick limit-tick-mid">25</span>
+          <span class="limit-tick limit-tick-max">100</span>
+        </div>
+        <div class="limit-cards">
+          <div class="limit-card">
+            <div class="limit-card-label">Studies retrieved &amp; scored</div>
+            <div class="limit-card-num" id="compareLimitVal">25</div>
+          </div>
+          <div class="limit-card">
+            <div class="limit-card-label">Studies the AI reads</div>
+            <div class="limit-card-num" id="compareLimitAi">25 of 25</div>
+          </div>
+        </div>
+        <div class="limit-panel zone-rec" id="compareLimitPanel">
+          <div class="limit-panel-head" id="compareLimitHead">25 · Recommended</div>
+          <div class="limit-panel-body" id="compareLimitBody"></div>
+          <div class="limit-panel-warn" id="compareLimitWarn"></div>
+        </div>
         <button class="btn" onclick="runAnalysis('compare')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="compareResults" style="display: none;"></div>
@@ -923,9 +1023,27 @@
         <input type="text" id="gapsModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="gapsModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="gapsLimit" min="10" max="200" value="10" style="width: 100%;">
-        <span id="gapsLimitVal">10</span>
-        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
+        <div class="limit-wrap">
+          <input type="range" id="gapsLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <span class="limit-tick limit-tick-min">10</span>
+          <span class="limit-tick limit-tick-mid">25</span>
+          <span class="limit-tick limit-tick-max">100</span>
+        </div>
+        <div class="limit-cards">
+          <div class="limit-card">
+            <div class="limit-card-label">Studies retrieved &amp; scored</div>
+            <div class="limit-card-num" id="gapsLimitVal">25</div>
+          </div>
+          <div class="limit-card">
+            <div class="limit-card-label">Studies the AI reads</div>
+            <div class="limit-card-num" id="gapsLimitAi">25 of 25</div>
+          </div>
+        </div>
+        <div class="limit-panel zone-rec" id="gapsLimitPanel">
+          <div class="limit-panel-head" id="gapsLimitHead">25 · Recommended</div>
+          <div class="limit-panel-body" id="gapsLimitBody"></div>
+          <div class="limit-panel-warn" id="gapsLimitWarn"></div>
+        </div>
         <button class="btn" onclick="runAnalysis('gaps')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="gapsResults" style="display: none;"></div>
@@ -968,9 +1086,27 @@
         <input type="text" id="controversiesModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="controversiesModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="controversiesLimit" min="10" max="200" value="10" style="width: 100%;">
-        <span id="controversiesLimitVal">10</span>
-        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
+        <div class="limit-wrap">
+          <input type="range" id="controversiesLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <span class="limit-tick limit-tick-min">10</span>
+          <span class="limit-tick limit-tick-mid">25</span>
+          <span class="limit-tick limit-tick-max">100</span>
+        </div>
+        <div class="limit-cards">
+          <div class="limit-card">
+            <div class="limit-card-label">Studies retrieved &amp; scored</div>
+            <div class="limit-card-num" id="controversiesLimitVal">25</div>
+          </div>
+          <div class="limit-card">
+            <div class="limit-card-label">Studies the AI reads</div>
+            <div class="limit-card-num" id="controversiesLimitAi">25 of 25</div>
+          </div>
+        </div>
+        <div class="limit-panel zone-rec" id="controversiesLimitPanel">
+          <div class="limit-panel-head" id="controversiesLimitHead">25 · Recommended</div>
+          <div class="limit-panel-body" id="controversiesLimitBody"></div>
+          <div class="limit-panel-warn" id="controversiesLimitWarn"></div>
+        </div>
         <button class="btn" onclick="runAnalysis('controversies')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="controversiesResults" style="display: none;"></div>
@@ -2123,13 +2259,54 @@
       });
     });
 
-    // Range slider labels + provider→model prefill
+    // Limit slider: two live numbers and a zone panel.
+    //
+    // Why two numbers instead of one: the heuristic scores every retrieved
+    // study, but the LLM only ever sees the top AI_REVIEW_CAP of them. Showing
+    // a single figure hid that split, so the "N excluded by the AI filter"
+    // line read as if the whole corpus had been reviewed. Now the user sees
+    // the gap while choosing, not afterwards from a warning banner.
+    function limitZoneText(v) {
+      if (v <= 20) return {
+        zone: '',
+        head: v + ' · Quick check',
+        body: 'Fast and almost always completes. The AI reads every scored study.',
+        warn: '⚠️ Small sets are often dominated by repeat versions of one review — measured: 5 of 10 works were the same Cochrane review, which produced a false unanimous verdict.'
+      };
+      if (v <= 27) return {
+        zone: 'zone-rec',
+        head: '25 · Recommended',
+        body: 'The AI reads all 25 scored studies, so the exclusion count means exactly what it says. This is also the window comparable tools use — Consensus Meter reads the top 20, Elicit reports up to 80.',
+        warn: ''
+      };
+      return {
+        zone: 'zone-broad',
+        head: v + ' · Broad survey',
+        body: 'Retrieves ' + v + ' studies, but the AI still reads only the top ' + AI_REVIEW_CAP + '. Good for spotting off-topic contamination in the full list.',
+        warn: '⚠️ On large sets the safety warnings often stay silent even when the corpus contains unrelated work — read the full study list, don\'t trust the headline verdict alone.'
+      };
+    }
+
+    function paintLimit(ep) {
+      const slider = document.getElementById(`${ep}Limit`);
+      if (!slider) return;
+      const v = parseInt(slider.value, 10);
+      const t = limitZoneText(v);
+      const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+      set(`${ep}LimitVal`, String(v));
+      set(`${ep}LimitAi`, v <= AI_REVIEW_CAP ? `${v} of ${v}` : `${AI_REVIEW_CAP} of ${v}`);
+      set(`${ep}LimitHead`, t.head);
+      set(`${ep}LimitBody`, t.body);
+      set(`${ep}LimitWarn`, t.warn);
+      const panel = document.getElementById(`${ep}LimitPanel`);
+      if (panel) panel.className = 'limit-panel' + (t.zone ? ' ' + t.zone : '');
+    }
+
     ['consensus', 'evidence', 'compare', 'gaps', 'controversies'].forEach(ep => {
       const slider = document.getElementById(`${ep}Limit`);
       if (slider) {
-        slider.addEventListener('input', (e) => {
-          document.getElementById(`${ep}LimitVal`).textContent = e.target.value;
-        });
+        slider.addEventListener('input', () => paintLimit(ep));
+        paintLimit(ep);
       }
       const provElem = document.getElementById(`${ep}Provider`);
       if (provElem) provElem.addEventListener('change', () => syncModelField(ep));
