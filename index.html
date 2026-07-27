@@ -310,6 +310,35 @@
        visual flag only — the card stays fully readable (no opacity change) */
     .study-card.ai-excluded { border-color: rgba(239, 68, 68, 0.3); }
     .study-chip.ai-excluded-chip { color: #f87171; border-color: rgba(239, 68, 68, 0.4); }
+    /* Retraction chips. Two tiers with different certainty, so they must not
+       look identical: a publisher-declared retraction is a fact, an index flag
+       alone may turn out to be a correction rather than a retraction. */
+    .study-chip.retracted-chip {
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.55);
+      background: rgba(239, 68, 68, 0.12);
+      font-weight: 600;
+    }
+    .study-chip.retracted-chip.retracted-flagged {
+      color: #fcd34d;
+      border-color: rgba(245, 158, 11, 0.5);
+      background: rgba(245, 158, 11, 0.1);
+    }
+    .retracted-note {
+      font-size: 0.8rem;
+      color: #fca5a5;
+      margin-top: 0.5rem;
+    }
+    .study-card.is-retracted { border-color: rgba(239, 68, 68, 0.35); }
+    .ai-scope-note {
+      font-size: 0.85rem;
+      color: #fcd34d;
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.28);
+      border-radius: 0.5rem;
+      padding: 0.6rem 0.8rem;
+      margin-top: 0.8rem;
+    }
     .ai-excluded-reason {
       font-size: 0.8rem;
       color: #888;
@@ -740,9 +769,9 @@
         <input type="text" id="consensusModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="consensusModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="consensusLimit" min="10" max="200" value="50" style="width: 100%;">
-        <span id="consensusLimitVal">50</span>
-        <div class="model-hint">10–200 · 50 recommended (fast, fewer rate limits)</div>
+        <input type="range" id="consensusLimit" min="10" max="200" value="10" style="width: 100%;">
+        <span id="consensusLimitVal">10</span>
+        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
         <button class="btn" onclick="runAnalysis('consensus')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="consensusResults" style="display: none;"></div>
@@ -785,9 +814,9 @@
         <input type="text" id="evidenceModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="evidenceModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="evidenceLimit" min="10" max="200" value="50" style="width: 100%;">
-        <span id="evidenceLimitVal">50</span>
-        <div class="model-hint">10–200 · 50 recommended (fast, fewer rate limits)</div>
+        <input type="range" id="evidenceLimit" min="10" max="200" value="10" style="width: 100%;">
+        <span id="evidenceLimitVal">10</span>
+        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
         <button class="btn" onclick="runAnalysis('evidence')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="evidenceResults" style="display: none;"></div>
@@ -832,9 +861,9 @@
         <input type="text" id="compareModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="compareModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="compareLimit" min="10" max="200" value="50" style="width: 100%;">
-        <span id="compareLimitVal">50</span>
-        <div class="model-hint">10–200 · 50 recommended (fast, fewer rate limits)</div>
+        <input type="range" id="compareLimit" min="10" max="200" value="10" style="width: 100%;">
+        <span id="compareLimitVal">10</span>
+        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
         <button class="btn" onclick="runAnalysis('compare')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="compareResults" style="display: none;"></div>
@@ -877,9 +906,9 @@
         <input type="text" id="gapsModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="gapsModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="gapsLimit" min="10" max="200" value="50" style="width: 100%;">
-        <span id="gapsLimitVal">50</span>
-        <div class="model-hint">10–200 · 50 recommended (fast, fewer rate limits)</div>
+        <input type="range" id="gapsLimit" min="10" max="200" value="10" style="width: 100%;">
+        <span id="gapsLimitVal">10</span>
+        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
         <button class="btn" onclick="runAnalysis('gaps')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="gapsResults" style="display: none;"></div>
@@ -922,9 +951,9 @@
         <input type="text" id="controversiesModel" placeholder="provider default" autocomplete="off">
         <div class="model-hint" id="controversiesModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
-        <input type="range" id="controversiesLimit" min="10" max="200" value="50" style="width: 100%;">
-        <span id="controversiesLimitVal">50</span>
-        <div class="model-hint">10–200 · 50 recommended (fast, fewer rate limits)</div>
+        <input type="range" id="controversiesLimit" min="10" max="200" value="10" style="width: 100%;">
+        <span id="controversiesLimitVal">10</span>
+        <div class="model-hint">10–200 · 10 recommended. A lower limit leaves the AI synthesis time to run and keeps the corpus focused; above ~30 studies the request often times out and you get the heuristic result only, and the AI reviews at most the top 25 either way. ⚠️ A low limit can also cut off refuting evidence and high-tier meta-analyses, making the result look more unanimous — or weaker — than the literature is.</div>
         <button class="btn" onclick="runAnalysis('controversies')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="controversiesResults" style="display: none;"></div>
@@ -1505,6 +1534,9 @@
         citations: w.cited_by_count || 0,
         design: w.design || '', stance: w.stance || '',
         stance_confidence: w.stance_confidence != null ? w.stance_confidence : '',
+        // Empty string, not undefined: a missing column in one row would shift
+        // the CSV header alignment for every other row.
+        retraction: w.retraction || '',
         doi: w.doi || '', group: group
       };
       if (claim !== undefined) row.claim = claim;
@@ -1697,6 +1729,16 @@
       const stanceClass = stance === 'supporting' ? 'stance-supporting'
         : stance === 'refuting' ? 'stance-refuting' : 'stance-neutral';
       let chips = '';
+      // Retraction first: it outranks every other label on the card. The CLI
+      // sets w.retraction to 'retracted-declared' (publisher marker in the
+      // title) or 'retracted-flagged' (source index only). Both are excluded
+      // from the score by the engine; the wording differs because the flag
+      // demonstrably over-marks.
+      const retr = String(w.retraction || '');
+      if (retr === 'retracted-declared')
+        chips += `<span class="study-chip retracted-chip">⚠️ Retracted</span>`;
+      else if (retr === 'retracted-flagged')
+        chips += `<span class="study-chip retracted-chip retracted-flagged">⚠️ Retracted?</span>`;
       if (ex) chips += `<span class="study-chip ai-excluded-chip">🚫 AI filter</span>`;
       if (w.year) chips += `<span class="study-chip">${esc(w.year)}</span>`;
       chips += `<span class="study-chip">${num(w.cited_by_count)} citations</span>`;
@@ -1706,13 +1748,19 @@
       const reason = ex && ex.reason
         ? `<div class="ai-excluded-reason">🚫 ${esc(ex.reason)}</div>`
         : '';
+      const retrNote = retr === 'retracted-declared'
+        ? `<div class="retracted-note">⚠️ This paper has been retracted — excluded from the score, shown for transparency.</div>`
+        : retr === 'retracted-flagged'
+          ? `<div class="retracted-note">⚠️ Flagged as retracted in the source index, not confirmed from the title — excluded from the score. May be a correction rather than a retraction; verify before citing.</div>`
+          : '';
       const link = w.doi
         ? `<a class="study-link" href="https://doi.org/${esc(encodeURI(String(w.doi)))}" target="_blank" rel="noopener noreferrer">View source ↗</a>`
         : '';
       return `
-        <div class="study-card${ex ? ' ai-excluded' : ''}">
+        <div class="study-card${ex ? ' ai-excluded' : ''}${retr ? ' is-retracted' : ''}">
           <div class="study-title">${esc(w.title)}</div>
           <div class="study-meta">${chips}</div>
+          ${retrNote}
           ${reason}
           ${link}
         </div>`;
@@ -1758,6 +1806,23 @@
     // own view provider (a meta-row without a filter is skipped — see
     // bindExportViews); rows are .study-card so scopeItems pairs them by
     // render order. Collapsed by default, like the Excluded section.
+    // The AI relevance filter never sees more than the top-ranked subset of
+    // the corpus, no matter how many studies were retrieved. Measured: on runs
+    // of 139 and 161 studies the AI excluded 3 each — about 2% — while on runs
+    // of 6 to 12 studies it excluded 50-78%. The filter did not become lenient;
+    // it simply never saw the rest. Without this note the "N excluded by the AI
+    // filter" line reads as if the whole corpus had been reviewed.
+    //
+    // 25 mirrors maxStudiesForLLM in providers.go. If that constant changes,
+    // change it here too — there is no field in the response carrying it.
+    const AI_REVIEW_CAP = 25;
+    function aiScopeNote(result) {
+      if (!filterRan(result)) return '';
+      const total = Number(result && result.study_count) || 0;
+      if (total <= AI_REVIEW_CAP) return '';
+      return `<div class="ai-scope-note">⚠️ The AI synthesis assessed ${AI_REVIEW_CAP} of ${num(total)} scored studies (the top-ranked subset). Studies ranked below ${AI_REVIEW_CAP} were neither included nor excluded by the AI filter — they were never reviewed.</div>`;
+    }
+
     function renderAllStudiesSection(all, key, filename) {
       const works = Array.isArray(all) ? all : [];
       lastData[key] = works.map(w => studyRow(w, 'analyzed'));
@@ -1903,7 +1968,9 @@
                  guarded ? '— guarded: too few relevant studies' : '— unverified: no AI filtering')}</p>
             <p><strong>Apex Design:</strong> ${esc(result.apex_design)}</p>
             <p><strong>Studies Analyzed:</strong> ${num(result.study_count)}${
-                 result.relevant_count == null ? '' : ` &nbsp;·&nbsp; <strong>Relevant:</strong> ${num(result.relevant_count)}`}</p>
+                 result.relevant_count == null ? '' : ` &nbsp;·&nbsp; <strong>Relevant:</strong> ${num(result.relevant_count)}`}${
+                 result.retracted_excluded ? ` &nbsp;·&nbsp; <strong>Retracted (excluded):</strong> ${num(result.retracted_excluded)}` : ''}</p>
+            ${aiScopeNote(result)}
             <p><strong>Supporting / Refuting / Mixed / Inconclusive:</strong>
                ${num(result.supporting)} / ${num(result.refuting)} / ${num(result.mixed)} / ${num(result.inconclusive)}</p>
             <p><strong>Method:</strong> ${esc(result.stance_method)} &nbsp;·&nbsp; <strong>Requested:</strong> ${esc(stanceSource)}</p>
