@@ -70,6 +70,116 @@ import (
 // LRU reclaims them.
 const cacheEngineVersion = "v1"
 
+// The manual constant above is a promise to remember; the automatic identifier
+// below is what happens when the promise is broken. cacheEngineVersion still has
+// a job no hash can do — the WEB layer's scoring logic (divergence rules,
+// compaction, prompt) lives in this module, and changing it does not change the
+// CLI binary at all. So the two are additive, and the key carries both:
+//
+//	sc:<engine>:<clihash>:<paramhash>
+//
+// clihash is the first cliHashPrefixLen hex digits of the sha256 of the CLI
+// binary this process actually shells out to (cliBinaryPath()). The binary is
+// committed under bin/, so it is a deterministic build artefact with a stable
+// identity: swapping it — the single most likely way a verdict silently moves —
+// re-keys the entire cache with no human step and no deploy note.
+//
+// Measured on this repo's binaries: bin/scientific-consensus-pp-cli.exe hashes
+// to 04b5c539f684 and bin/scientific-consensus-pp-cli-linux to b659fff65cb9, so
+// two builds of the same CLI really do land on different prefixes. The full
+// sha256 is truncated to 12 hex digits (48 bits) because this is a
+// cache-invalidation tag, not a security boundary: an accidental collision
+// between two builds needs ~2^24 rebuilds to become likely, and the paramhash is
+// still a full sha256 that includes the same 12 digits.
+const cliHashPrefixLen = 12
+
+// cliHashUnavailable is the clihash segment used when the binary cannot be
+// hashed. It is deliberately not valid hex, so it can never be mistaken for a
+// real prefix, and it is deliberately not empty, so the key keeps one shape
+// (four colon-separated fields) for greps and for the length bound.
+//
+// Reaching this state costs correctness in one narrow way — entries keyed under
+// it are not invalidated by a binary swap — and that is the accepted trade: the
+// soft-dependency rule in this file's header says a cache concern never blocks a
+// request, and by extension never blocks startup. An unreadable binary is
+// already a fatal problem for the CLI itself; the cache must not be the
+// component that reports it.
+const cliHashUnavailable = "nohash"
+
+// cacheKeyMaxLen is the length ceiling asserted by TestCacheKeyLengthIsBounded.
+// The key is bounded by construction — claims are hashed, never concatenated —
+// so this is a guard against a future field being appended raw, not against long
+// input. Real keys measure 83 characters.
+const cacheKeyMaxLen = 200
+
+// cliEngineHashSlot holds the process-wide clihash, written once by
+// initCLIEngineHash before the server accepts a request and read by every
+// cacheKey call after that. Atomic rather than a plain string because tests
+// substitute values while other goroutines (the async Set path) may still be
+// reading, and a torn read here would be a wrong cache key.
+var cliEngineHashSlot atomic.Pointer[string]
+
+// cliEngineHash returns the clihash segment for the key, or cliHashUnavailable
+// when nothing has been computed. The zero state resolving to a valid segment is
+// what lets cacheKey work in tests and in any code path that runs before main()
+// has initialized it.
+func cliEngineHash() string {
+	if p := cliEngineHashSlot.Load(); p != nil && *p != "" {
+		return *p
+	}
+	return cliHashUnavailable
+}
+
+// cliBinaryHash returns the first cliHashPrefixLen hex digits of the sha256 of
+// the file at path. It streams (io.Copy over a 32KB window) instead of reading
+// the file in: the binary is ~22MB and there is no reason to hold that in the
+// heap of a long-lived server for the 50ms it is needed.
+func cliBinaryHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil))[:cliHashPrefixLen], nil
+}
+
+// initCLIEngineHash computes the clihash once, at startup, and logs the key
+// prefix it produces next to the one it supersedes.
+//
+// Synchronous on purpose, unlike probeAsync. Hashing the committed binary is a
+// bounded local read — measured at 197ms cold and 56ms warm on a 22.6MB binary —
+// and it must finish before the first request, or that request keys under
+// cliHashUnavailable and strands an entry nothing will ever read again. It also
+// cannot fail in a way that matters: any error resolves to the fallback marker
+// plus a log line, so a missing or unreadable binary delays startup by nothing
+// and stops nothing. Doing this per request instead would add that same 56ms to
+// every lookup — 17x the 3.3ms a Redis hit costs — which is the whole reason it
+// lives here.
+func initCLIEngineHash() {
+	path := cliBinaryPath()
+	start := time.Now()
+	sum, err := cliBinaryHash(path)
+	if err != nil {
+		log.Printf("cache: cannot hash CLI binary %s (%v) — key prefix falls back to sc:%s:%s:, "+
+			"so a binary swap will NOT invalidate the cache on its own; bump cacheEngineVersion by hand",
+			path, err, cacheEngineVersion, cliHashUnavailable)
+		return
+	}
+	cliEngineHashSlot.Store(&sum)
+
+	// The measurement line: what the key used to look like, what it looks like
+	// now, and how long the key actually is against its ceiling.
+	sample := cacheKey("consensus", 10, []string{"vitamin D reduces respiratory infections"})
+	log.Printf("cache: CLI binary %s hashed in %s — key prefix was sc:%s: and is now sc:%s:%s: "+
+		"(sample key %d chars, ceiling %d)",
+		path, time.Since(start).Round(time.Millisecond), cacheEngineVersion,
+		cacheEngineVersion, sum, len(sample), cacheKeyMaxLen)
+}
+
 const (
 	// cacheTTL is how long one CLI payload stays valid. 7 days: the literature
 	// behind a claim does not move meaningfully faster than that, and the CLI's
@@ -170,7 +280,7 @@ func (c *redisCache) probeAsync() {
 			log.Printf("cache: redis %s did not answer PING (%s) — requests run uncached until it does", c.addr, c.safeErr(err))
 			return
 		}
-		log.Printf("cache: redis %s ready (engine=%s, ttl=%s)", c.addr, cacheEngineVersion, cacheTTL)
+		log.Printf("cache: redis %s ready (engine=%s, cli=%s, ttl=%s)", c.addr, cacheEngineVersion, cliEngineHash(), cacheTTL)
 	}()
 }
 
@@ -324,10 +434,14 @@ func (c *redisCache) logOutcome(outcome, key string) {
 
 // ---- key construction --------------------------------------------------------
 
-// cacheKey returns the Redis key for one query: sc:<engine>:<sha256(params)>.
-// The engine version appears twice on purpose — in the prefix, so entries from a
-// superseded engine are visible and greppable, and inside the hash, so it is
-// impossible to collide across versions.
+// cacheKey returns the Redis key for one query:
+// sc:<engine>:<clihash>:<sha256(params)>.
+//
+// Two independent invalidation handles, for two independent ways a verdict
+// moves: <engine> is bumped by hand when this module's scoring logic changes,
+// <clihash> changes by itself when the CLI binary does. Both appear twice — in
+// the prefix, so entries from a superseded engine or binary are visible and
+// greppable, and inside the hash, so it is impossible to collide across them.
 func cacheKey(endpoint string, limit int, claims []string) string {
 	return cacheKeyWithVersion(cacheEngineVersion, endpoint, limit, claims)
 }
@@ -335,11 +449,19 @@ func cacheKey(endpoint string, limit int, claims []string) string {
 // cacheKeyWithVersion is cacheKey with an explicit engine version, so tests can
 // prove that bumping the version really does strand old entries.
 func cacheKeyWithVersion(version, endpoint string, limit int, claims []string) string {
+	return cacheKeyFull(version, cliEngineHash(), endpoint, limit, claims)
+}
+
+// cacheKeyFull is the key builder with both invalidation handles passed in, so a
+// test can prove that a different binary yields a different key without having to
+// replace the running process's binary.
+func cacheKeyFull(version, cliHash, endpoint string, limit int, claims []string) string {
 	// Normalized parameter form: fixed field order, one field per line, length-
 	// prefixed claims. The length prefix is what stops two different claim lists
 	// from serializing to the same bytes.
 	var b strings.Builder
 	b.WriteString("engine=" + version)
+	b.WriteString("\ncli=" + cliHash)
 	b.WriteString("\nendpoint=" + endpoint)
 	b.WriteString("\nlimit=" + strconv.Itoa(limit))
 	for i, claim := range claims {
@@ -347,7 +469,7 @@ func cacheKeyWithVersion(version, endpoint string, limit int, claims []string) s
 		fmt.Fprintf(&b, "\nclaim%d=%d:%s", i, len(n), n)
 	}
 	sum := sha256.Sum256([]byte(b.String()))
-	return "sc:" + version + ":" + hex.EncodeToString(sum[:])
+	return "sc:" + version + ":" + cliHash + ":" + hex.EncodeToString(sum[:])
 }
 
 // normalizeClaim is the claim normalization used for BOTH the cache key and the

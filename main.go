@@ -184,6 +184,14 @@ func main() {
 	// a goroutine, so a missing, refused or hung Redis can neither delay nor fail
 	// startup. A nil cacheStore (no REDIS_ADDR, or CACHE_DISABLED) makes every
 	// cache call a no-op, which is exactly the pre-cache behaviour.
+	//
+	// initCLIEngineHash runs FIRST and synchronously: it stamps the CLI binary's
+	// identity into every cache key, so it has to be in place before any key is
+	// built. It is a ~50ms local file read that cannot fail the process (an
+	// unreadable binary logs and falls back to the manual version), unlike
+	// probeAsync it is not a network call, and running it here rather than per
+	// request is what keeps a cache hit at ~3ms.
+	initCLIEngineHash()
 	cacheStore = newRedisCacheFromEnv()
 	cacheStore.probeAsync()
 

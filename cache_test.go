@@ -11,6 +11,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -185,8 +186,21 @@ func TestCacheKeyShapeAndStability(t *testing.T) {
 	if want := "sc:" + cacheEngineVersion + ":"; !strings.HasPrefix(k1, want) {
 		t.Errorf("key %q does not start with %q", k1, want)
 	}
-	// sc:v1: + 64 hex chars of sha256.
-	if got := len(strings.TrimPrefix(k1, "sc:"+cacheEngineVersion+":")); got != 64 {
+	// sc:<engine>:<clihash>:<64 hex chars of sha256> — four fields, in that
+	// order. The clihash field is either cliHashPrefixLen hex digits or the
+	// cliHashUnavailable marker (which is what an unhashed test process gets).
+	fields := strings.Split(k1, ":")
+	if len(fields) != 4 {
+		t.Fatalf("key %q has %d colon-separated fields, want 4 (sc:<engine>:<clihash>:<paramhash>)", k1, len(fields))
+	}
+	if fields[0] != "sc" || fields[1] != cacheEngineVersion {
+		t.Errorf("key %q: want sc:%s prefix, got %s:%s", k1, cacheEngineVersion, fields[0], fields[1])
+	}
+	if fields[2] != cliHashUnavailable && len(fields[2]) != cliHashPrefixLen {
+		t.Errorf("clihash field is %q (%d chars), want %d hex digits or %q",
+			fields[2], len(fields[2]), cliHashPrefixLen, cliHashUnavailable)
+	}
+	if got := len(fields[3]); got != 64 {
 		t.Errorf("hash part is %d chars, want 64 (sha256 hex)", got)
 	}
 }
@@ -231,6 +245,238 @@ func TestCacheKeyIsEngineVersioned(t *testing.T) {
 	}
 	if cacheKey("consensus", 10, claims) != cacheKeyWithVersion(cacheEngineVersion, "consensus", 10, claims) {
 		t.Error("cacheKey does not use cacheEngineVersion")
+	}
+}
+
+// ---- automatic engine identity (the CLI binary hash) -------------------------
+
+// withCLIEngineHash swaps the process-wide clihash for the duration of one test
+// and restores whatever was there before, so these tests cannot leak a key
+// prefix into the rest of the suite.
+func withCLIEngineHash(t *testing.T, h string) {
+	t.Helper()
+	prev := cliEngineHashSlot.Load()
+	t.Cleanup(func() { cliEngineHashSlot.Store(prev) })
+	if h == "" {
+		cliEngineHashSlot.Store(nil)
+		return
+	}
+	cliEngineHashSlot.Store(&h)
+}
+
+// writeFakeCLI writes a file with the given content and returns its path. It
+// stands in for a CLI binary: cliBinaryHash only reads bytes, so a small file
+// proves the same property as a 22MB one and keeps the test instant.
+func writeFakeCLI(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "cli-bin")
+	if err := os.WriteFile(p, []byte(content), 0o755); err != nil {
+		t.Fatalf("write fake CLI: %v", err)
+	}
+	return p
+}
+
+// TestCLIBinaryHashIdentifiesContent is the core claim of the automatic
+// identifier: the hash follows the bytes of the binary and nothing else. Same
+// content (even at a different path, with a different mtime) means the same
+// prefix; one changed byte means a different one.
+func TestCLIBinaryHashIdentifiesContent(t *testing.T) {
+	a1 := writeFakeCLI(t, "ENGINE-A: scoring build one")
+	a2 := writeFakeCLI(t, "ENGINE-A: scoring build one") // identical bytes, different file
+	b := writeFakeCLI(t, "ENGINE-B: scoring build two")
+
+	hA1, err := cliBinaryHash(a1)
+	if err != nil {
+		t.Fatalf("hash a1: %v", err)
+	}
+	hA2, err := cliBinaryHash(a2)
+	if err != nil {
+		t.Fatalf("hash a2: %v", err)
+	}
+	hB, err := cliBinaryHash(b)
+	if err != nil {
+		t.Fatalf("hash b: %v", err)
+	}
+
+	if hA1 != hA2 {
+		t.Errorf("same binary content hashed differently: %s vs %s — the cache would be invalidated by a redeploy that changes nothing", hA1, hA2)
+	}
+	if hA1 == hB {
+		t.Fatalf("two different binaries hashed the same (%s) — a rebuilt CLI would keep serving old verdicts", hA1)
+	}
+	for _, h := range []string{hA1, hB} {
+		if len(h) != cliHashPrefixLen {
+			t.Errorf("hash %q is %d chars, want %d", h, len(h), cliHashPrefixLen)
+		}
+		if _, err := hex.DecodeString(h); err != nil {
+			t.Errorf("hash %q is not hex: %v", h, err)
+		}
+	}
+
+	// Re-reading the same file must be stable across calls, not just across
+	// files: a hash that drifted per call would re-key the cache continuously.
+	for i := 0; i < 3; i++ {
+		again, err := cliBinaryHash(a1)
+		if err != nil {
+			t.Fatalf("rehash a1: %v", err)
+		}
+		if again != hA1 {
+			t.Fatalf("hash of an unchanged file drifted on call %d: %s then %s", i+2, hA1, again)
+		}
+	}
+}
+
+// TestCLIBinarySwapChangesKeyPrefix is the whole point of the change, exercised
+// through the real startup path: initCLIEngineHash reads the binary that
+// cliBinaryPath() resolves, so swapping the binary must move every key prefix
+// with no human step and no bump of cacheEngineVersion.
+func TestCLIBinarySwapChangesKeyPrefix(t *testing.T) {
+	withCLIEngineHash(t, "")
+	claims := []string{"vitamin D reduces respiratory infections"}
+
+	prefixFor := func(path string) (prefix, key string) {
+		t.Setenv("CLI_BIN", path)
+		initCLIEngineHash()
+		key = cacheKey("consensus", 10, claims)
+		fields := strings.Split(key, ":")
+		if len(fields) != 4 {
+			t.Fatalf("key %q is not sc:<engine>:<clihash>:<paramhash>", key)
+		}
+		return strings.Join(fields[:3], ":") + ":", key
+	}
+
+	oldBin := writeFakeCLI(t, "CLI build with the pre-8bb22658f scoring engine")
+	newBin := writeFakeCLI(t, "CLI build that rewrote 14 works' labels")
+
+	oldPrefix, oldKey := prefixFor(oldBin)
+	newPrefix, newKey := prefixFor(newBin)
+
+	if oldPrefix == newPrefix {
+		t.Fatalf("swapping the CLI binary did not change the key prefix (%s): the cache would serve pre-rebuild verdicts for the full %s TTL", oldPrefix, cacheTTL)
+	}
+	if oldKey == newKey {
+		t.Fatal("swapping the CLI binary did not change the full key")
+	}
+	// Both prefixes must still carry the manual version: the automatic
+	// identifier is ADDITIVE, it does not replace the hand-bumped constant.
+	for _, p := range []string{oldPrefix, newPrefix} {
+		if !strings.HasPrefix(p, "sc:"+cacheEngineVersion+":") {
+			t.Errorf("prefix %q lost the manual engine version", p)
+		}
+	}
+	// Re-initializing from the first binary must return to the first prefix,
+	// so a rollback re-uses the entries it originally wrote.
+	if rolledBack, _ := prefixFor(oldBin); rolledBack != oldPrefix {
+		t.Errorf("rollback to the old binary produced %q, want the original %q", rolledBack, oldPrefix)
+	}
+
+	t.Logf("old binary -> prefix %s", oldPrefix)
+	t.Logf("new binary -> prefix %s", newPrefix)
+}
+
+// TestCLIHashFallsBackWhenBinaryUnreadable holds the soft-dependency line at the
+// startup boundary: a binary that cannot be hashed must degrade to the manual
+// version with a log line, never panic and never abort startup.
+func TestCLIHashFallsBackWhenBinaryUnreadable(t *testing.T) {
+	withCLIEngineHash(t, "")
+
+	if _, err := cliBinaryHash(filepath.Join(t.TempDir(), "does-not-exist")); err == nil {
+		t.Error("hashing a missing file returned no error")
+	}
+
+	// The startup call itself: missing binary, and it must simply return.
+	t.Setenv("CLI_BIN", filepath.Join(t.TempDir(), "also-missing"))
+	initCLIEngineHash() // must not panic, must not exit
+	if got := cliEngineHash(); got != cliHashUnavailable {
+		t.Errorf("clihash after a failed hash is %q, want the %q marker", got, cliHashUnavailable)
+	}
+
+	// The key must stay well-formed, and must still be versioned by hand — the
+	// fallback loses the automatic handle, not the manual one.
+	key := cacheKey("consensus", 10, []string{"claim"})
+	if !strings.HasPrefix(key, "sc:"+cacheEngineVersion+":"+cliHashUnavailable+":") {
+		t.Errorf("fallback key has the wrong shape: %s", key)
+	}
+	if len(strings.Split(key, ":")) != 4 {
+		t.Errorf("fallback key is not four fields: %s", key)
+	}
+	// The marker must never be mistakable for a real hash prefix.
+	if _, err := hex.DecodeString(cliHashUnavailable); err == nil {
+		t.Errorf("%q is valid hex, so it could collide with a real binary hash", cliHashUnavailable)
+	}
+
+	// A directory is the other way a read fails (open succeeds, io.Copy does
+	// not) — it must be an error, not a hash of nothing.
+	if h, err := cliBinaryHash(t.TempDir()); err == nil {
+		t.Errorf("hashing a directory returned %q instead of an error", h)
+	}
+}
+
+// TestCacheKeyLengthIsBounded proves the key cannot outgrow a Redis key we are
+// happy to log and grep, whatever the input. Length is fixed by construction —
+// claims are hashed, never appended — so the only way this breaks is a future
+// field concatenated raw into the key.
+func TestCacheKeyLengthIsBounded(t *testing.T) {
+	withCLIEngineHash(t, strings.Repeat("a", cliHashPrefixLen))
+
+	longClaim := strings.Repeat("a very long claim about vitamin D and respiratory infections ", 40)
+	many := make([]string, 50)
+	for i := range many {
+		many[i] = longClaim + strconv.Itoa(i)
+	}
+
+	cases := map[string]string{
+		"single short claim": cacheKey("consensus", 10, []string{"aspirin"}),
+		"one huge claim":     cacheKey("consensus", 10, []string{longClaim}),
+		"50 huge claims":     cacheKey("compare", 100, many),
+		"no claims":          cacheKey("gaps", 10, nil),
+	}
+	for name, key := range cases {
+		if got := len(key); got > cacheKeyMaxLen {
+			t.Errorf("%s: key is %d chars, over the %d ceiling: %s", name, got, cacheKeyMaxLen, key)
+		}
+	}
+
+	// Every key must be exactly the same length, since only fixed-width fields
+	// reach it. That is the property that makes the ceiling meaningful.
+	want := len(cases["single short claim"])
+	for name, key := range cases {
+		if len(key) != want {
+			t.Errorf("%s: key is %d chars, but keys must be a fixed %d — an input-dependent field reached the key", name, len(key), want)
+		}
+	}
+
+	// The measurement the task asks for: old shape vs new shape, in characters.
+	oldShape := "sc:" + cacheEngineVersion + ":" + strings.Repeat("0", 64)
+	newShape := cases["single short claim"]
+	t.Logf("old key shape sc:<engine>:<paramhash>            = %d chars", len(oldShape))
+	t.Logf("new key shape sc:<engine>:<clihash>:<paramhash>  = %d chars (ceiling %d)", len(newShape), cacheKeyMaxLen)
+	if len(newShape) != len(oldShape)+cliHashPrefixLen+1 {
+		t.Errorf("new key grew by %d chars, expected exactly %d (clihash + one colon)",
+			len(newShape)-len(oldShape), cliHashPrefixLen+1)
+	}
+}
+
+// TestRealCLIBinariesHashDistinctly checks the committed artefacts themselves,
+// since they are what production actually keys on. Skips rather than fails when
+// bin/ is absent: the binaries are large build outputs and a checkout without
+// them is still a valid place to run the suite.
+func TestRealCLIBinariesHashDistinctly(t *testing.T) {
+	seen := map[string]string{}
+	for _, name := range []string{"scientific-consensus-pp-cli.exe", "scientific-consensus-pp-cli-linux"} {
+		p := filepath.Join("bin", name)
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("committed binary %s not present: %v", p, err)
+		}
+		h, err := cliBinaryHash(p)
+		if err != nil {
+			t.Fatalf("hash %s: %v", p, err)
+		}
+		if other, dup := seen[h]; dup {
+			t.Errorf("%s and %s share the hash %s", other, name, h)
+		}
+		seen[h] = name
+		t.Logf("%-40s -> sc:%s:%s:", name, cacheEngineVersion, h)
 	}
 }
 
