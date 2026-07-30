@@ -111,6 +111,112 @@ curl -X POST $RENDER_URL/api/consensus \
   -d '{"claim":"vitamin D reduces infections","provider":"openrouter","model":"deepseek/deepseek-chat-v3-0324:free","limit":20}'
 ```
 
+## Redis cache
+
+The web layer caches the child CLI's JSON payload in Redis (`cache.go`). It is a
+strict soft dependency: with no Redis, an unreachable Redis, or a wrong password,
+every request behaves exactly as it did before the cache existed — only slower.
+Nothing below can break a deploy; it can only make one slow.
+
+### Where Redis runs
+
+One shared instance for the whole bundle, not one per app:
+
+| property | value |
+|---|---|
+| compose project | `/opt/pubvera/redis/` |
+| network | `pubvera-shared` (external Docker network) |
+| published ports | **none** — reachable only from containers on `pubvera-shared` |
+| memory | `maxmemory 512MB`, `maxmemory-policy allkeys-lru` |
+| persistence | off — `save ""`, `appendonly no` |
+| auto-update | excluded from Watchtower (`com.centurylinklabs.watchtower.enable=false`) |
+
+Persistence is off deliberately: every entry is recomputable by re-running the
+CLI, so a restart costs one cold fetch per query and nothing else. `allkeys-lru`
+means a full instance evicts its coldest keys instead of returning errors. The
+port stays unpublished because there is no reason for anything outside the shared
+network to reach it, and Watchtower is disabled so an unattended image bump can
+never restart the cache under a running app.
+
+### REDIS_PASSWORD lives in TWO files
+
+The same password is written in two places, and they must match:
+
+- `/opt/pubvera/redis/.env` — what the Redis container starts up with
+- `/opt/pubvera/pubvera-corpova/.env` — what this app authenticates with
+
+**Rotating it means editing both, plus the `.env` of every other app attached to
+`pubvera-shared`.** Changing one and not the others is the single most likely
+future cause of `auth failed` in the logs: the app keeps serving correct results
+(a failed AUTH degrades to a cache miss), it just quietly runs uncached while the
+log fills with cache failure lines. If you see that, check the other `.env`
+first — the code is almost certainly fine.
+
+### Attaching another app to the cache
+
+In the new app's compose file, list **both** networks on the service and declare
+the shared one as external:
+
+```yaml
+services:
+  my-app:
+    networks:
+      - default        # MANDATORY — do not omit
+      - pubvera-shared
+
+networks:
+  pubvera-shared:
+    external: true
+```
+
+Writing `default` is not optional. The moment a service names any network,
+Compose stops attaching it to the project's implicit `default` network — so
+listing only `pubvera-shared` gains the app the cache and loses it its own
+network, breaking service-name DNS to its own siblings.
+
+The app also needs `REDIS_ADDR` (the shared container's `host:port` on
+`pubvera-shared`) and `REDIS_PASSWORD` in its environment. An empty `REDIS_ADDR`,
+or `CACHE_DISABLED=1`, runs everything uncached by design.
+
+### Cache keys and when to bump the version
+
+    sc:<engine>:<clihash>:<paramhash>
+
+Two independent invalidation handles, because a verdict can move in two
+independent ways:
+
+- **`clihash` — automatic.** The first 12 hex digits of the sha256 of the CLI
+  binary the process actually shells out to. Replacing
+  `bin/scientific-consensus-pp-cli-linux` re-keys the whole cache by itself, with
+  no human step and no deploy note.
+- **`engine` — manual** (`cacheEngineVersion` in `cache.go`). Bump it when the
+  **web** layer's scoring logic changes — divergence rules, compaction, the
+  synthesis prompt — because none of that touches the CLI binary, so no hash
+  moves on its own. A needless bump costs one cold fetch per query; a missing one
+  serves verdicts already known to be wrong for the full 7-day TTL.
+
+Rule of thumb: CLI binary swap → nothing to do. Web-layer scoring change → bump
+`cacheEngineVersion` in the same commit.
+
+### Verify after deploy
+
+```bash
+docker logs corpova | grep -i cache
+```
+
+Expect a `cache: redis ... ready` line, and check that its `cli=` value matches
+the hash of the binary actually in the image:
+
+```bash
+sha256sum bin/scientific-consensus-pp-cli-linux | cut -c1-12
+```
+
+Currently `b659fff65cb9`. A `cli=nohash` instead means the binary could not be
+read — the cache still works, but a binary swap will no longer invalidate it, so
+fix the binary rather than living with it.
+
+Measured in production on 2026-07-30: **cold 2.25 s, cached hit 0.018 s** (~125x).
+
 ## Troubleshooting
 
 **"Cannot find CLI binary"**
