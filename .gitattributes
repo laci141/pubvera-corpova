@@ -1,0 +1,15 @@
+# This module's Go sources are LF in the index and must be LF in the worktree
+# too. gofmt compares the bytes ON DISK, so a CRLF checkout makes `gofmt -l`
+# list a file that is byte-identical to a clean one — measured: main.go's entire
+# gofmt diff was 578 lines of ^M and nothing else. eol=lf overrides
+# core.autocrlf=true, which is what put the CRLF there in the first place.
+*.go text eol=lf
+
+# The committed CLI binary has no file extension, so git classifies it by
+# content sniffing alone (currently -text, correctly). This makes that explicit
+# and immune to any future broad rule such as `* text=auto`: the first 12 digits
+# of this file's sha256 are the clihash segment of every production cache key
+# (b659fff65cb9), and a single converted byte would both corrupt the ELF and
+# silently re-key the cache. `binary` is the -text -diff -merge macro; all three
+# are correct for a 22MB build artefact.
+bin/** binary
