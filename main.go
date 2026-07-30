@@ -195,7 +195,7 @@ func main() {
 	cacheStore = newRedisCacheFromEnv()
 	cacheStore.probeAsync()
 
-	log.Printf("scientific-consensus-web listening on %s (CLI: %s)", addr, cliBinaryPath())
+	log.Printf("corpova listening on %s (CLI: %s)", addr, cliBinaryPath())
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
 	}
