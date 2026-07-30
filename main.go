@@ -1,6 +1,8 @@
 // Command scientific-consensus-web is a thin standalone HTTP wrapper around the
-// scientific-consensus CLI. Each /api endpoint runs the compiled CLI once per
-// request (always keyless/heuristic — the CLI never uses an LLM), then, when the
+// scientific-consensus CLI. Each /api endpoint runs the compiled CLI (always
+// keyless/heuristic — the CLI never uses an LLM) for one cold key at a time:
+// a cache hit skips the run (cache.go) and concurrent callers of the same key
+// share one (singleflight.go). Then, when the
 // caller supplied a BYOK (bring-your-own-key) key, makes ONE in-process
 // chat-completions call (providers.go) to synthesize the CLI output into a
 // structured verdict. Each caller uses their own LLM key; the server never
@@ -336,12 +338,13 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 
 	if raw == nil {
 		var ok bool
-		raw, ok = runCLIRaw(ctx, w, b, args)
+		// The cache write moved INTO the shared run (see runCLIRaw): it belongs
+		// to the run that produced the bytes, not to whichever caller happens to
+		// still be waiting when it finishes. That is what keeps N concurrent
+		// callers at one CLI run AND one cache write instead of N of each.
+		raw, ok = runCLIRaw(ctx, w, b, cacheKey, args)
 		if !ok {
 			return // runCLIRaw already wrote the error response
-		}
-		if cacheKey != "" {
-			cacheStore.Set(cacheKey, raw)
 		}
 	}
 
@@ -373,16 +376,69 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// runCLIRaw runs the child CLI once and returns its validated JSON payload —
-// the cache's miss path, factored out of runCLIJSON so that a cache HIT skips
-// spawning a child process entirely. On failure it writes the HTTP error itself
-// and returns false, so the caller only has to return.
+// runCLIRaw returns the CLI payload for one request — the cache's miss path,
+// factored out of runCLIJSON so that a cache HIT skips spawning a child process
+// entirely. On failure it writes the HTTP error itself and returns false, so the
+// caller only has to return.
 //
-// Note what is deliberately absent: this function knows nothing about the cache.
-// No Redis call happens on this path, so no Redis failure can turn into an HTTP
-// error — the worst a broken cache can do is make every request take this route,
-// which is precisely how the server behaved before the cache existed.
-func runCLIRaw(ctx context.Context, w http.ResponseWriter, b byok, args []string) ([]byte, bool) {
+// It no longer necessarily RUNS the CLI. Concurrent callers of the same key
+// share one run (singleflight.go): the first starts it, the rest wait for it and
+// receive its bytes. Sharing is safe precisely because the child is keyless —
+// the same argument that makes the payload cacheable across callers makes it
+// shareable between simultaneous ones. Callers of different keys never wait on
+// each other.
+//
+// Note what is deliberately absent: no Redis error can reach this function's
+// HTTP response. cacheStore.Set is fire-and-forget inside the run, so the worst
+// a broken cache can do is make every request take this route — precisely how
+// the server behaved before the cache existed.
+func runCLIRaw(ctx context.Context, w http.ResponseWriter, b byok, cacheKey string, args []string) ([]byte, bool) {
+	raw, _, err := cliFlight.Do(ctx, cacheKey, func(runCtx context.Context) ([]byte, error) {
+		out, runErr := runCLIOnce(runCtx, args)
+		if runErr != nil {
+			return nil, runErr
+		}
+		// One run, one write. A failed run is never cached.
+		if cacheKey != "" {
+			cacheStore.Set(cacheKey, out)
+		}
+		return out, nil
+	})
+	if err != nil {
+		writeCLIError(w, b, err)
+		return nil, false
+	}
+	return raw, true
+}
+
+// cliError is a CLI-leg failure with the HTTP status it should produce. It is
+// shared verbatim with every caller waiting on the same run, which is safe
+// because its message comes from a child that never received anyone's key: the
+// text is caller-independent. Each caller still redacts its own key from it in
+// writeCLIError, keeping the belt-and-braces guarantee per request.
+type cliError struct {
+	status int
+	msg    string
+}
+
+func (e *cliError) Error() string { return e.msg }
+
+// writeCLIError turns a run failure into this caller's HTTP response.
+func writeCLIError(w http.ResponseWriter, b byok, err error) {
+	var ce *cliError
+	if errors.As(err, &ce) {
+		writeError(w, ce.status, redact(ce.msg, b.key))
+		return
+	}
+	// Not a CLI failure but this caller's own context ending: it timed out, or
+	// the client went away. Either way this request is over; the run continues
+	// for whoever else is waiting on it.
+	writeError(w, http.StatusGatewayTimeout, redact(err.Error(), b.key))
+}
+
+// runCLIOnce runs the child CLI exactly once and returns its validated JSON.
+// It is the only place a child process is spawned.
+func runCLIOnce(ctx context.Context, args []string) ([]byte, error) {
 	args = append(args, cliPacingArgs...)
 
 	// #nosec G204 -- args are fixed subcommands/flags plus user text as discrete
@@ -395,21 +451,18 @@ func runCLIRaw(ctx context.Context, w http.ResponseWriter, b byok, args []string
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		// Redact the key from any diagnostic before it leaves the process.
-		msg := redact(strings.TrimSpace(stderr.String()), b.key)
+		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
-			msg = redact(err.Error(), b.key)
+			msg = err.Error()
 		}
-		writeError(w, http.StatusBadGateway, "CLI failed: "+msg)
-		return nil, false
+		return nil, &cliError{status: http.StatusBadGateway, msg: "CLI failed: " + msg}
 	}
 
 	raw := bytes.TrimSpace(stdout.Bytes())
 	if !json.Valid(raw) {
-		writeError(w, http.StatusBadGateway, "CLI returned non-JSON output")
-		return nil, false
+		return nil, &cliError{status: http.StatusBadGateway, msg: "CLI returned non-JSON output"}
 	}
-	return raw, true
+	return raw, nil
 }
 
 // decodePOST enforces POST + decodes a JSON body into dst. On any failure it
