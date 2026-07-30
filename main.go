@@ -179,6 +179,14 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	// The response cache is a SOFT dependency. newRedisCacheFromEnv only reads
+	// the environment — it never dials — and probeAsync reports reachability from
+	// a goroutine, so a missing, refused or hung Redis can neither delay nor fail
+	// startup. A nil cacheStore (no REDIS_ADDR, or CACHE_DISABLED) makes every
+	// cache call a no-op, which is exactly the pre-cache behaviour.
+	cacheStore = newRedisCacheFromEnv()
+	cacheStore.probeAsync()
+
 	log.Printf("scientific-consensus-web listening on %s (CLI: %s)", addr, cliBinaryPath())
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
@@ -296,35 +304,37 @@ var cliPacingArgs = []string{"--rate-limit", "0.15", "--timeout", "100s"}
 // fails the request: the heuristic result is returned with a redacted
 // llm_error. It centralizes the exec, timeouts, key-redaction, and
 // JSON-validation shared by every endpoint.
-func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string, claims []string, args []string) {
+func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string, claims []string, args []string, cacheKey string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
-	args = append(args, cliPacingArgs...)
-
-	// #nosec G204 -- args are fixed subcommands/flags plus user text as discrete
-	// argv elements (no shell); the child env carries no keys at all.
-	cmd := exec.CommandContext(ctx, cliBinaryPath(), args...)
-	cmd.Env = buildChildEnv()
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		// Redact the key from any diagnostic before it leaves the process.
-		msg := redact(strings.TrimSpace(stderr.String()), b.key)
-		if msg == "" {
-			msg = redact(err.Error(), b.key)
+	// The cache covers the CLI leg ONLY: the child CLI is always keyless, so its
+	// payload (OpenAlex search + heuristic scoring) is identical for every caller
+	// and safe to share. The BYOK synthesis below is per-caller and is never
+	// cached — it still runs on every request, hit or miss.
+	var raw []byte
+	if cacheKey != "" {
+		if cached, ok := cacheStore.Get(ctx, cacheKey); ok {
+			// A stored payload that is not valid JSON (truncated write, foreign
+			// key collision) is treated as a miss rather than served: a cache can
+			// only ever make the response faster, never different.
+			if json.Valid(cached) {
+				raw = cached
+			} else {
+				log.Printf("cache: entry %s is not valid JSON, recomputing", cacheKey)
+			}
 		}
-		writeError(w, http.StatusBadGateway, "CLI failed: "+msg)
-		return
 	}
 
-	raw := bytes.TrimSpace(stdout.Bytes())
-	if !json.Valid(raw) {
-		writeError(w, http.StatusBadGateway, "CLI returned non-JSON output")
-		return
+	if raw == nil {
+		var ok bool
+		raw, ok = runCLIRaw(ctx, w, b, args)
+		if !ok {
+			return // runCLIRaw already wrote the error response
+		}
+		if cacheKey != "" {
+			cacheStore.Set(cacheKey, raw)
+		}
 	}
 
 	resp := consensusResponse{
@@ -353,6 +363,45 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// runCLIRaw runs the child CLI once and returns its validated JSON payload —
+// the cache's miss path, factored out of runCLIJSON so that a cache HIT skips
+// spawning a child process entirely. On failure it writes the HTTP error itself
+// and returns false, so the caller only has to return.
+//
+// Note what is deliberately absent: this function knows nothing about the cache.
+// No Redis call happens on this path, so no Redis failure can turn into an HTTP
+// error — the worst a broken cache can do is make every request take this route,
+// which is precisely how the server behaved before the cache existed.
+func runCLIRaw(ctx context.Context, w http.ResponseWriter, b byok, args []string) ([]byte, bool) {
+	args = append(args, cliPacingArgs...)
+
+	// #nosec G204 -- args are fixed subcommands/flags plus user text as discrete
+	// argv elements (no shell); the child env carries no keys at all.
+	cmd := exec.CommandContext(ctx, cliBinaryPath(), args...)
+	cmd.Env = buildChildEnv()
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		// Redact the key from any diagnostic before it leaves the process.
+		msg := redact(strings.TrimSpace(stderr.String()), b.key)
+		if msg == "" {
+			msg = redact(err.Error(), b.key)
+		}
+		writeError(w, http.StatusBadGateway, "CLI failed: "+msg)
+		return nil, false
+	}
+
+	raw := bytes.TrimSpace(stdout.Bytes())
+	if !json.Valid(raw) {
+		writeError(w, http.StatusBadGateway, "CLI returned non-JSON output")
+		return nil, false
+	}
+	return raw, true
 }
 
 // decodePOST enforces POST + decodes a JSON body into dst. On any failure it
@@ -394,7 +443,12 @@ func handleClaimCmd(w http.ResponseWriter, r *http.Request, subcommand string, d
 	if !decodePOST(w, r, &req) {
 		return
 	}
-	req.Claim = strings.TrimSpace(req.Claim)
+	// normalizeClaim (whitespace-collapsing TrimSpace) is applied ONCE, here, so
+	// the cache key and the argument handed to the CLI are derived from the same
+	// string. The CLI echoes the claim back in its JSON, so keying on a
+	// normalized claim while running the CLI on the raw one would let a hit
+	// return a payload with different spacing than the miss it replaced.
+	req.Claim = normalizeClaim(req.Claim)
 	if req.Claim == "" {
 		writeError(w, http.StatusBadRequest, "claim is required")
 		return
@@ -403,8 +457,10 @@ func handleClaimCmd(w http.ResponseWriter, r *http.Request, subcommand string, d
 	if !ok {
 		return
 	}
-	args := []string{subcommand, req.Claim, "--json", "--limit", fmt.Sprintf("%d", clampLimit(req.Limit, defLimit))}
-	runCLIJSON(w, r, b, subcommand, []string{req.Claim}, args)
+	limit := clampLimit(req.Limit, defLimit)
+	claims := []string{req.Claim}
+	args := []string{subcommand, req.Claim, "--json", "--limit", fmt.Sprintf("%d", limit)}
+	runCLIJSON(w, r, b, subcommand, claims, args, cacheKey(subcommand, limit, claims))
 }
 
 func handleConsensus(w http.ResponseWriter, r *http.Request) {
@@ -442,8 +498,9 @@ func handleCompare(w http.ResponseWriter, r *http.Request) {
 	if !decodePOST(w, r, &req) {
 		return
 	}
-	req.Claim1 = strings.TrimSpace(req.Claim1)
-	req.Claim2 = strings.TrimSpace(req.Claim2)
+	// Same single normalization point as handleClaimCmd — see the comment there.
+	req.Claim1 = normalizeClaim(req.Claim1)
+	req.Claim2 = normalizeClaim(req.Claim2)
 	if req.Claim1 == "" || req.Claim2 == "" {
 		writeError(w, http.StatusBadRequest, "both claim1 and claim2 are required")
 		return
@@ -452,8 +509,10 @@ func handleCompare(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	args := []string{"compare", req.Claim1, req.Claim2, "--json", "--limit", fmt.Sprintf("%d", clampLimit(req.Limit, 40))}
-	runCLIJSON(w, r, b, "compare", []string{req.Claim1, req.Claim2}, args)
+	limit := clampLimit(req.Limit, 40)
+	claims := []string{req.Claim1, req.Claim2}
+	args := []string{"compare", req.Claim1, req.Claim2, "--json", "--limit", fmt.Sprintf("%d", limit)}
+	runCLIJSON(w, r, b, "compare", claims, args, cacheKey("compare", limit, claims))
 }
 
 // buildChildEnv returns the environment for the child CLI process: the
