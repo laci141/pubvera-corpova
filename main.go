@@ -394,6 +394,15 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 // the server behaved before the cache existed.
 func runCLIRaw(ctx context.Context, w http.ResponseWriter, b byok, cacheKey string, args []string) ([]byte, bool) {
 	raw, _, err := cliFlight.Do(ctx, cacheKey, func(runCtx context.Context) ([]byte, error) {
+		// The slot is taken INSIDE the shared run, not around it. A caller that
+		// joins an in-flight run spawns no process, so charging it a slot would
+		// count children that do not exist and reject work that costs nothing.
+		// Only genuinely new runs compete.
+		if slotErr := cliSem.acquire(runCtx); slotErr != nil {
+			return nil, slotErr
+		}
+		defer cliSem.release()
+
 		out, runErr := runCLIOnce(runCtx, args)
 		if runErr != nil {
 			return nil, runErr
@@ -418,7 +427,12 @@ func runCLIRaw(ctx context.Context, w http.ResponseWriter, b byok, cacheKey stri
 // writeCLIError, keeping the belt-and-braces guarantee per request.
 type cliError struct {
 	status int
-	msg    string
+	// retryAfter, when > 0, is sent as the Retry-After header in seconds. Only
+	// the 503 from the concurrency semaphore sets it: a "not now" without a
+	// "come back when" is not actionable, and a client that retries immediately
+	// makes the overload worse.
+	retryAfter int
+	msg        string
 }
 
 func (e *cliError) Error() string { return e.msg }
@@ -427,6 +441,11 @@ func (e *cliError) Error() string { return e.msg }
 func writeCLIError(w http.ResponseWriter, b byok, err error) {
 	var ce *cliError
 	if errors.As(err, &ce) {
+		// Headers must be set before the status line. writeError calls
+		// WriteHeader, after which any Header().Set is silently discarded.
+		if ce.retryAfter > 0 {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", ce.retryAfter))
+		}
 		writeError(w, ce.status, redact(ce.msg, b.key))
 		return
 	}
