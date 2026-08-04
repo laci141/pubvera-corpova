@@ -31,13 +31,22 @@
     }
 
     /* HERO SECTION */
+    /* min-height, not height: measured, the hero content is a fixed ~428px, so
+       a hard 80vh left 436px of it empty on a 1080px-tall viewport — the claim
+       box sat alone above a large gap. min-height also removes the old failure
+       mode where a short viewport made the content overflow its own padding.
+       The 4.5rem top padding is not decoration: .auth-bar is position:fixed at
+       top:1rem and ~54px tall (bottom edge ~74px), so anything less would let
+       it overlap the title once the hero stopped pushing the title down.
+       Bottom padding is smaller than top because .bento-grid below already
+       brings its own 4rem of breathing room. */
     .hero {
-      height: 80vh;
+      min-height: 40vh;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      padding: 2rem;
+      padding: 4.5rem 2rem 1.5rem;
       text-align: center;
       background: linear-gradient(180deg, rgba(15,15,15,1) 0%, rgba(26,26,46,0.8) 100%);
     }
@@ -656,12 +665,21 @@
       }
     }
 
-    /* LIMIT SLIDER: three zones + live panel.
-       The track colour changes at 25 because that is where AI coverage drops
-       from 100% to a subset -- maxStudiesForLLM in providers.go. Quick zone is
-       grey, not green: measured, small corpora are the most likely to produce
-       a false unanimous verdict (5 of 10 works were the same Cochrane review),
-       so it must not read as the safe choice. */
+    /* LIMIT SLIDER: four bands + live panel. Measured in production, the AI
+       synthesis completes almost every time at 10, usually but less often at
+       15-20, usually-but-not-always at 25, and frequently not at all at 100:
+         10      strong green (zone-rec)   Recommended  -- reads the whole set
+         15-20   pale green   (zone-good)  Good         -- reads the whole set,
+                                                           completes less often
+         25      grey         (neutral)    Wider net    -- last value the AI
+                                                           still reads in full
+         30-100  orange       (zone-broad) Broad survey
+       The 25/30 edge is where AI coverage drops from 100% to a subset --
+       maxStudiesForLLM in providers.go. 10 and 15-20 share one hue on purpose:
+       both are safe sizes, and only their reliability differs. The small-corpus
+       risk (5 of 10 works were the same Cochrane review, a false unanimous
+       verdict) has not gone away -- it is carried by both green bands' warning
+       line instead of by the colour. */
     .limit-wrap{position:relative;margin:.2rem 0 2.3rem}
     /* .form-group input sets background, border and padding, and as a
        (class + element) selector it outranks a bare .limit-slider class --
@@ -693,9 +711,14 @@
       background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
       backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px)}
     .limit-panel.zone-rec{background:rgba(47,214,166,.10);border-color:rgba(47,214,166,.35)}
+    /* zone-good is zone-rec's own green (47,214,166) at roughly half strength --
+       same hue, lower opacity -- so the two green bands read as one family with
+       15-20 clearly the weaker of the pair. */
+    .limit-panel.zone-good{background:rgba(47,214,166,.05);border-color:rgba(47,214,166,.18)}
     .limit-panel.zone-broad{background:rgba(255,171,76,.09);border-color:rgba(255,171,76,.32)}
     .limit-panel-head{font-weight:600;margin-bottom:5px;color:#cdd6ea}
     .limit-panel.zone-rec .limit-panel-head{color:#2fd6a6}
+    .limit-panel.zone-good .limit-panel-head{color:rgba(47,214,166,.72)}
     .limit-panel.zone-broad .limit-panel-head{color:#ffab4c}
     .limit-panel-body{color:#99a}
     .limit-panel-warn{margin-top:6px;color:#ffc978}
@@ -830,6 +853,10 @@
     /* RESPONSIVE */
     @media (max-width: 768px) {
       .hero h1 { font-size: 2rem; }
+      /* The auth bar shrinks below 600px (top:0.5rem, smaller buttons), so the
+         title needs less clearance than on desktop — and a short phone viewport
+         cannot spare 5.5rem of it. */
+      .hero { padding-top: 4rem; }
       .claim-input-box textarea { height: 80px; }
       .modal-content { max-width: 95%; padding: 1.5rem; }
       .bento-grid { grid-template-columns: 1fr; }
@@ -918,7 +945,7 @@
         <div class="model-hint" id="consensusModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
-          <input type="range" id="consensusLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <input type="range" id="consensusLimit" class="limit-slider" min="10" max="100" step="5" value="10">
           <span class="limit-zone-mark" id="consensusLimitMark"></span>
           <span class="limit-tick" id="consensusLimitTick10">10</span>
           <span class="limit-tick" id="consensusLimitTick25">25</span>
@@ -927,15 +954,15 @@
         <div class="limit-cards">
           <div class="limit-card">
             <div class="limit-card-label">Studies retrieved &amp; scored</div>
-            <div class="limit-card-num" id="consensusLimitVal">25</div>
+            <div class="limit-card-num" id="consensusLimitVal">10</div>
           </div>
           <div class="limit-card">
             <div class="limit-card-label">Studies the AI reads</div>
-            <div class="limit-card-num" id="consensusLimitAi">25 of 25</div>
+            <div class="limit-card-num" id="consensusLimitAi">10 of 10</div>
           </div>
         </div>
         <div class="limit-panel zone-rec" id="consensusLimitPanel">
-          <div class="limit-panel-head" id="consensusLimitHead">25 · Recommended</div>
+          <div class="limit-panel-head" id="consensusLimitHead">10 · Recommended</div>
           <div class="limit-panel-body" id="consensusLimitBody"></div>
           <div class="limit-panel-warn" id="consensusLimitWarn"></div>
         </div>
@@ -982,7 +1009,7 @@
         <div class="model-hint" id="evidenceModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
-          <input type="range" id="evidenceLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <input type="range" id="evidenceLimit" class="limit-slider" min="10" max="100" step="5" value="10">
           <span class="limit-zone-mark" id="evidenceLimitMark"></span>
           <span class="limit-tick" id="evidenceLimitTick10">10</span>
           <span class="limit-tick" id="evidenceLimitTick25">25</span>
@@ -991,15 +1018,15 @@
         <div class="limit-cards">
           <div class="limit-card">
             <div class="limit-card-label">Studies retrieved &amp; scored</div>
-            <div class="limit-card-num" id="evidenceLimitVal">25</div>
+            <div class="limit-card-num" id="evidenceLimitVal">10</div>
           </div>
           <div class="limit-card">
             <div class="limit-card-label">Studies the AI reads</div>
-            <div class="limit-card-num" id="evidenceLimitAi">25 of 25</div>
+            <div class="limit-card-num" id="evidenceLimitAi">10 of 10</div>
           </div>
         </div>
         <div class="limit-panel zone-rec" id="evidenceLimitPanel">
-          <div class="limit-panel-head" id="evidenceLimitHead">25 · Recommended</div>
+          <div class="limit-panel-head" id="evidenceLimitHead">10 · Recommended</div>
           <div class="limit-panel-body" id="evidenceLimitBody"></div>
           <div class="limit-panel-warn" id="evidenceLimitWarn"></div>
         </div>
@@ -1048,7 +1075,7 @@
         <div class="model-hint" id="compareModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
-          <input type="range" id="compareLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <input type="range" id="compareLimit" class="limit-slider" min="10" max="100" step="5" value="10">
           <span class="limit-zone-mark" id="compareLimitMark"></span>
           <span class="limit-tick" id="compareLimitTick10">10</span>
           <span class="limit-tick" id="compareLimitTick25">25</span>
@@ -1057,15 +1084,15 @@
         <div class="limit-cards">
           <div class="limit-card">
             <div class="limit-card-label">Studies retrieved &amp; scored</div>
-            <div class="limit-card-num" id="compareLimitVal">25</div>
+            <div class="limit-card-num" id="compareLimitVal">10</div>
           </div>
           <div class="limit-card">
             <div class="limit-card-label">Studies the AI reads</div>
-            <div class="limit-card-num" id="compareLimitAi">25 of 25</div>
+            <div class="limit-card-num" id="compareLimitAi">10 of 10</div>
           </div>
         </div>
         <div class="limit-panel zone-rec" id="compareLimitPanel">
-          <div class="limit-panel-head" id="compareLimitHead">25 · Recommended</div>
+          <div class="limit-panel-head" id="compareLimitHead">10 · Recommended</div>
           <div class="limit-panel-body" id="compareLimitBody"></div>
           <div class="limit-panel-warn" id="compareLimitWarn"></div>
         </div>
@@ -1112,7 +1139,7 @@
         <div class="model-hint" id="gapsModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
-          <input type="range" id="gapsLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <input type="range" id="gapsLimit" class="limit-slider" min="10" max="100" step="5" value="10">
           <span class="limit-zone-mark" id="gapsLimitMark"></span>
           <span class="limit-tick" id="gapsLimitTick10">10</span>
           <span class="limit-tick" id="gapsLimitTick25">25</span>
@@ -1121,15 +1148,15 @@
         <div class="limit-cards">
           <div class="limit-card">
             <div class="limit-card-label">Studies retrieved &amp; scored</div>
-            <div class="limit-card-num" id="gapsLimitVal">25</div>
+            <div class="limit-card-num" id="gapsLimitVal">10</div>
           </div>
           <div class="limit-card">
             <div class="limit-card-label">Studies the AI reads</div>
-            <div class="limit-card-num" id="gapsLimitAi">25 of 25</div>
+            <div class="limit-card-num" id="gapsLimitAi">10 of 10</div>
           </div>
         </div>
         <div class="limit-panel zone-rec" id="gapsLimitPanel">
-          <div class="limit-panel-head" id="gapsLimitHead">25 · Recommended</div>
+          <div class="limit-panel-head" id="gapsLimitHead">10 · Recommended</div>
           <div class="limit-panel-body" id="gapsLimitBody"></div>
           <div class="limit-panel-warn" id="gapsLimitWarn"></div>
         </div>
@@ -1176,7 +1203,7 @@
         <div class="model-hint" id="controversiesModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
-          <input type="range" id="controversiesLimit" class="limit-slider" min="10" max="100" step="5" value="25">
+          <input type="range" id="controversiesLimit" class="limit-slider" min="10" max="100" step="5" value="10">
           <span class="limit-zone-mark" id="controversiesLimitMark"></span>
           <span class="limit-tick" id="controversiesLimitTick10">10</span>
           <span class="limit-tick" id="controversiesLimitTick25">25</span>
@@ -1185,15 +1212,15 @@
         <div class="limit-cards">
           <div class="limit-card">
             <div class="limit-card-label">Studies retrieved &amp; scored</div>
-            <div class="limit-card-num" id="controversiesLimitVal">25</div>
+            <div class="limit-card-num" id="controversiesLimitVal">10</div>
           </div>
           <div class="limit-card">
             <div class="limit-card-label">Studies the AI reads</div>
-            <div class="limit-card-num" id="controversiesLimitAi">25 of 25</div>
+            <div class="limit-card-num" id="controversiesLimitAi">10 of 10</div>
           </div>
         </div>
         <div class="limit-panel zone-rec" id="controversiesLimitPanel">
-          <div class="limit-panel-head" id="controversiesLimitHead">25 · Recommended</div>
+          <div class="limit-panel-head" id="controversiesLimitHead">10 · Recommended</div>
           <div class="limit-panel-body" id="controversiesLimitBody"></div>
           <div class="limit-panel-warn" id="controversiesLimitWarn"></div>
         </div>
@@ -2430,24 +2457,43 @@
     // a single figure hid that split, so the "N excluded by the AI filter"
     // line read as if the whole corpus had been reviewed. Now the user sees
     // the gap while choosing, not afterwards from a warning banner.
+    // The Cochrane duplicate-versions warning applies to ANY small set, so both
+    // green bands carry it verbatim. Still accurate: the committed CLI predates
+    // the version-dedup fix, so a small set can still be repeat versions of one
+    // review.
+    const SMALL_SET_WARN = '⚠️ Small sets are often dominated by repeat versions of one review — measured: 5 of 10 works were the same Cochrane review, which produced a false unanimous verdict.';
+
     function limitZoneText(v) {
-      if (v <= 20) return {
-        zone: '',
-        head: v + ' · Quick check',
-        body: 'Fast and almost always completes. The AI reads every scored study.',
-        warn: '⚠️ Small sets are often dominated by repeat versions of one review — measured: 5 of 10 works were the same Cochrane review, which produced a false unanimous verdict.'
-      };
-      if (v <= 27) return {
+      if (v <= 10) return {
         zone: 'zone-rec',
-        head: '25 · Recommended',
-        body: 'The AI reads all 25 scored studies, so the exclusion count means exactly what it says. This is also the window comparable tools use — Consensus Meter reads the top 20, Elicit reports up to 80.',
+        head: v + ' · Recommended',
+        body: 'The AI reads every scored study, and at this size the full AI analysis completes most reliably. Larger sets more often run out of time and fall back to the algorithmic score alone.',
+        warn: SMALL_SET_WARN
+      };
+      // 15-20 still reads the whole set, so it is green — but measured, it
+      // completes noticeably less often than 10, which is why it is a paler
+      // green rather than the same one. The reliability caveat lives in the
+      // body; the warn line stays the small-set risk alone.
+      if (v <= 20) return {
+        zone: 'zone-good',
+        head: v + ' · Good',
+        body: 'The AI still reads every scored study here. The full AI analysis usually completes, though less reliably than at 10.',
+        warn: SMALL_SET_WARN
+      };
+      // Neutral band: the bare .limit-panel, the same styling the low zone used
+      // to carry. It has to read as neither the recommendation (zone-rec) nor a
+      // caution (zone-broad), which is exactly what the unmodified panel does.
+      if (v <= 27) return {
+        zone: '',
+        head: v + ' · Wider net',
+        body: 'The AI reads all scored studies here, matching the window comparable tools use — Consensus Meter reads the top 20, Elicit reports up to 80. The AI synthesis usually completes at this size, but not always; when it doesn\'t you get the algorithmic score without the AI reading.',
         warn: ''
       };
       return {
         zone: 'zone-broad',
         head: v + ' · Broad survey',
         body: 'Retrieves ' + v + ' studies, but the AI still reads only the top ' + AI_REVIEW_CAP + '. Good for spotting off-topic contamination in the full list.',
-        warn: '⚠️ On large sets the safety warnings often stay silent even when the corpus contains unrelated work — read the full study list, don\'t trust the headline verdict alone.'
+        warn: '⚠️ On large sets the safety warnings often stay silent even when the corpus contains unrelated work — read the full study list, don\'t trust the headline verdict alone. The AI synthesis is also least likely to complete at this size.'
       };
     }
 
@@ -2474,8 +2520,15 @@
         const mark = document.getElementById(`${ep}LimitMark`);
         if (mark) mark.style.left = (limitPosPx(25, w) - 1) + 'px';
         // The filled part carries the CURRENT zone colour, so the track
-        // changes while dragging instead of showing a fixed three-zone band.
-        const fill = v <= 20 ? 'rgba(255,255,255,.42)' : (v <= 27 ? '#2fd6a6' : '#ffab4c');
+        // changes while dragging instead of showing a fixed four-zone band.
+        // These MUST stay in step with limitZoneText's four bands, or the track
+        // and the panel below it disagree: strong green = recommended
+        // (zone-rec), pale green = good (zone-good), grey = neutral wider net,
+        // orange = broad survey (zone-broad).
+        const fill = v <= 10 ? '#2fd6a6'
+          : v <= 20 ? 'rgba(47,214,166,.45)'
+          : v <= 27 ? 'rgba(255,255,255,.42)'
+          : '#ffab4c';
         const stop = (limitPosPx(v, w) / w * 100).toFixed(2) + '%';
         slider.style.background =
           `linear-gradient(to right, ${fill} 0 ${stop}, rgba(255,255,255,.13) ${stop} 100%)`;
