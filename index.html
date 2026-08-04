@@ -754,6 +754,79 @@
       to { transform: rotate(360deg); }
     }
 
+    /* AUTH BAR (Google sign-in) — glass panel, same treatment as .disclaimer:
+       translucent white fill, hairline border, blur, soft drop shadow. Fixed to
+       the top-right corner, which the 80vh centred hero leaves empty. z-index
+       stays under .modal (1000) so an open modal covers it rather than fighting
+       it. Hidden until /config.json returns a Supabase config. */
+    .auth-bar {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 900;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      max-width: calc(100vw - 2rem);
+      padding: 0.5rem 0.75rem;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      backdrop-filter: blur(15px);
+      -webkit-backdrop-filter: blur(15px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    /* display:flex above would otherwise defeat the hidden attribute. */
+    .auth-bar[hidden] { display: none; }
+    .auth-email {
+      font-size: 0.82rem;
+      color: #cdd6ea;
+      max-width: 42vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .auth-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #cdd6ea;
+      padding: 0.35rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.2s;
+      white-space: nowrap;
+    }
+    .auth-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: #00d4ff;
+      color: #fff;
+    }
+    /* The sign-in button is the page's primary action here, so it borrows the
+       .btn gradient; sign-out stays the quiet variant. */
+    .auth-btn.auth-btn-primary {
+      background: linear-gradient(90deg, #00d4ff, #7c3aed);
+      border-color: transparent;
+      color: #000;
+    }
+    .auth-btn.auth-btn-primary:hover {
+      color: #000;
+      box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
+    }
+    @media (max-width: 600px) {
+      .auth-bar {
+        top: 0.5rem;
+        right: 0.5rem;
+        gap: 0.4rem;
+        padding: 0.35rem 0.5rem;
+        backdrop-filter: blur(11px);
+        -webkit-backdrop-filter: blur(11px);
+      }
+      .auth-email { font-size: 0.72rem; max-width: 38vw; }
+      .auth-btn { font-size: 0.72rem; padding: 0.3rem 0.7rem; }
+    }
+
     /* RESPONSIVE */
     @media (max-width: 768px) {
       .hero h1 { font-size: 2rem; }
@@ -764,6 +837,15 @@
   </style>
 </head>
 <body>
+
+  <!-- AUTH BAR — stays hidden until /config.json returns a Supabase config.
+       Without one the page never loads Supabase and behaves exactly as it did
+       before sign-in existed. Wired up by the module script at the end. -->
+  <div class="auth-bar" id="authBar" hidden>
+    <span class="auth-email" id="authEmail" hidden></span>
+    <button type="button" class="auth-btn auth-btn-primary" id="authSignInBtn" hidden>Sign in with Google</button>
+    <button type="button" class="auth-btn" id="authSignOutBtn" hidden>Sign out</button>
+  </div>
 
   <!-- HERO SECTION -->
   <section class="hero">
@@ -1780,16 +1862,34 @@
         headers['X-LLM-Key'] = keyField.value.trim();
         headers['X-LLM-Provider'] = provField.value || '';
       }
+      // Bearer token for the auth layer sitting in front of /api/*. Read at
+      // REQUEST time, never cached at page load: the Supabase client refreshes
+      // the access token in the background, so a token captured once at load
+      // would be an hour stale on a page left open. window.sb exists only when
+      // /config.json returned a Supabase config (see the module script at the
+      // end of this file) — without it the request goes out exactly as before.
+      if (window.sb) {
+        try {
+          const { data: { session } } = await window.sb.auth.getSession();
+          if (session) headers['Authorization'] = 'Bearer ' + session.access_token;
+        } catch (_) { /* no token: let the server decide — 401 is handled below */ }
+      }
 
       try {
         const res = await fetch(`/api/${endpoint}`, {
           method: 'POST', headers, body: JSON.stringify(body)
         });
-        const data = await res.json();
+        // 401/403/503 are produced by the auth/quota layer in front of the API,
+        // whose body is not guaranteed to be JSON. Parsing defensively keeps
+        // those statuses in the branch below instead of letting a parse failure
+        // turn them into a generic network error in the catch.
+        let data = null;
+        try { data = await res.json(); } catch (_) { /* handled below */ }
         if (!res.ok) {
-          resultsDiv.innerHTML = `<div class="result-card"><h3>Error</h3><p>${esc(data.error || 'Unknown error')}</p></div>` + newAnalysisBtn(endpoint);
+          resultsDiv.innerHTML = apiErrorCard(res.status, data) + newAnalysisBtn(endpoint);
           return;
         }
+        if (data === null) throw new Error('The server returned a response that could not be read.');
         const result = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
         aiExcluded = buildExcludedIndex(data.llm_synthesis);
         lastQuery = endpoint === 'compare' ? `${body.claim1} vs ${body.claim2}` : body.claim;
@@ -1812,6 +1912,57 @@
 
     function newAnalysisBtn(endpoint) {
       return `<button class="back-btn" onclick="resetModal('${endpoint}')">← New analysis</button>`;
+    }
+
+    // Bridge to the module script at the end of this file: the sign-in button
+    // inside a 401 error card is inline HTML, so it needs a global to call.
+    function pubveraSignIn() {
+      if (window.pubveraAuth) window.pubveraAuth.signIn();
+    }
+
+    // Error card for a non-2xx API response. 401/403/503 come from the auth and
+    // quota layer in front of the API and each one means something different to
+    // the user; every other status keeps the previous behaviour of showing the
+    // server's own error text. `data` is null when the body was not JSON.
+    function apiErrorCard(status, data) {
+      const d = data || {};
+      if (status === 401) {
+        // The raw error ("missing/invalid token") tells the user nothing they
+        // can act on, and the remedy is always the same, so it is not shown.
+        const btn = (window.pubveraAuth && window.pubveraAuth.enabled)
+          ? '<button class="btn" style="margin-top: 1rem;" onclick="pubveraSignIn()">Sign in with Google</button>'
+          : '';
+        return `<div class="result-card"><h3>Sign-in required</h3><p>Please sign in to run an analysis.</p>${btn}</div>`;
+      }
+      if (status === 403) {
+        // A valid token that is not allowed through: either the plan does not
+        // include this app, or the period's quota is used up. Upgrading is the
+        // way out of both, but prices belong on the pricing page, not here.
+        if (String(d.reason || '') === 'app_locked') {
+          return `<div class="result-card"><h3>Not included in your plan</h3><p>Corpova is not part of your current plan. Upgrading your plan unlocks it.</p></div>`;
+        }
+        let msg = 'You have used up the analyses included in your plan for this period.';
+        const resets = resetsAtText(d.resets_at);
+        if (resets) msg += ` Your quota resets on ${resets}.`;
+        msg += ' Upgrading your plan raises the limit.';
+        return `<div class="result-card"><h3>Analysis limit reached</h3><p>${esc(msg)}</p></div>`;
+      }
+      if (status === 503) {
+        // The quota service could not be reached. The request was not rejected
+        // and the user did nothing wrong, so this must not read as a failure.
+        return `<div class="result-card"><h3>Temporarily unavailable</h3><p>The service is temporarily unavailable. Please try again in a moment.</p></div>`;
+      }
+      return `<div class="result-card"><h3>Error</h3><p>${esc(d.error || 'Unknown error')}</p></div>`;
+    }
+
+    // resets_at arrives as an ISO timestamp; show it in the reader's own locale
+    // and fall back to the raw value when it is not a parseable date.
+    function resetsAtText(v) {
+      if (!v) return '';
+      const t = new Date(v);
+      return isNaN(t.getTime())
+        ? String(v)
+        : t.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
     }
 
     function fx(n) { const v = Number(n); return isNaN(v) ? '—' : v.toFixed(2); }
@@ -2417,6 +2568,79 @@
 
     // Load settings on page load
     window.addEventListener('load', loadSettings);
+  </script>
+
+  <!-- GOOGLE SIGN-IN (Supabase).
+       Module scope, so the classic script above reaches it through window.sb /
+       window.pubveraAuth. Config comes from /config.json (handleRoot in
+       main.go). When it is missing or incomplete — the state of the current
+       deployment until the environment variables are set — Supabase is never
+       loaded at all and the page runs unauthenticated: no sign-in UI, no
+       Authorization header, everything else unchanged. -->
+  <script type="module">
+    const bar     = document.getElementById('authBar');
+    const emailEl = document.getElementById('authEmail');
+    const inBtn   = document.getElementById('authSignInBtn');
+    const outBtn  = document.getElementById('authSignOutBtn');
+
+    // Installed first so runAnalysis() and the 401 error card can always ask,
+    // even if the config fetch or the module import below never completes.
+    window.pubveraAuth = { enabled: false, signIn() {}, signOut() {} };
+
+    async function initAuth() {
+      let cfg;
+      try {
+        const res = await fetch('/config.json', { cache: 'no-store' });
+        if (!res.ok) return;
+        cfg = await res.json();
+      } catch (_) {
+        return; // unauthenticated mode
+      }
+      const url = String((cfg && cfg.supabase_url) || '').trim();
+      const key = String((cfg && cfg.supabase_anon_key) || '').trim();
+      // Either field empty: skip Supabase entirely.
+      if (!url || !key) return;
+
+      // Dynamic import, not a static one: a static import runs before the fetch
+      // above, so an unconfigured page would still pay for the library.
+      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+      const sb = createClient(url, key);
+      window.sb = sb;
+
+      window.pubveraAuth = {
+        enabled: true,
+        signIn: async () => {
+          const { error } = await sb.auth.signInWithOAuth({
+            provider: 'google',
+            // Back to the origin the user is actually on, so a sign-in started
+            // on corpova.pubvera.com returns to corpova.pubvera.com.
+            options: { redirectTo: window.location.origin }
+          });
+          if (error) alert('Sign-in failed: ' + error.message);
+        },
+        signOut: () => sb.auth.signOut()
+      };
+
+      inBtn.onclick  = () => window.pubveraAuth.signIn();
+      outBtn.onclick = () => window.pubveraAuth.signOut();
+
+      function render(session) {
+        const signedIn = !!session;
+        emailEl.textContent = signedIn ? (session.user && session.user.email || 'Signed in') : '';
+        emailEl.hidden = !signedIn;
+        outBtn.hidden  = !signedIn;
+        inBtn.hidden   = signedIn;
+        bar.hidden = false; // only now: an empty bar must never flash first
+      }
+
+      const { data: { session } } = await sb.auth.getSession();
+      render(session);
+      // Fires on sign-in, sign-out and background token refresh, including the
+      // redirect back from Google, which lands here as a new session.
+      sb.auth.onAuthStateChange((_event, s) => render(s));
+    }
+
+    initAuth().catch(() => { /* stay in unauthenticated mode */ });
   </script>
 
 </body>

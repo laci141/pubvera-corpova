@@ -207,10 +207,14 @@ func main() {
 // fetch() responses without these ("Failed to fetch") even same-origin in some
 // embed/proxy setups, and error responses need them too or the browser hides
 // the JSON error body.
+//
+// Authorization is in the allowed list because the page now sends a Supabase
+// bearer token on /api/* requests (index.html); without it a cross-origin
+// preflight would reject the request before it ever reached the handler.
 func setCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-LLM-Key, X-LLM-Provider")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-LLM-Key, X-LLM-Provider")
 }
 
 // preflight handles the CORS preflight OPTIONS request. Returns true when the
@@ -223,8 +227,39 @@ func preflight(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// browserConfig is the bootstrap payload /config.json hands to the page so it
+// can build its Supabase client. SupabaseAnonKey is the PUBLISHABLE
+// (browser-side) key, never the secret one: it is designed to be visible in a
+// browser and Row Level Security is what protects the data. It is still never
+// logged — the security model at the top of this file applies to it too.
+type browserConfig struct {
+	SupabaseURL     string `json:"supabase_url"`
+	SupabaseAnonKey string `json:"supabase_anon_key"`
+}
+
 func handleRoot(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
+	case "/config.json":
+		// Deliberately NOT under /api/*: Caddy protects /api/* with
+		// forward_auth, and the page needs this config BEFORE it can sign
+		// anyone in. Serving it from /api/ would make the requirement circular
+		// and force a special-case exception into the Caddy matcher.
+		//
+		// A missing variable is not an error. An empty pair with status 200 is
+		// a valid answer that puts the page into unauthenticated mode, which is
+		// what keeps local development and the current deployment working until
+		// the environment is set.
+		supaURL := strings.TrimSpace(os.Getenv("SUPABASE_URL"))
+		supaKey := strings.TrimSpace(os.Getenv("SUPABASE_PUBLISHABLE_KEY"))
+		if supaURL == "" || supaKey == "" {
+			supaURL, supaKey = "", ""
+		}
+		setCORS(w)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		// Never cache: a stale key surviving a key rotation would be hard to
+		// diagnose from the browser side.
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(browserConfig{SupabaseURL: supaURL, SupabaseAnonKey: supaKey})
 	case "/", "/index.html":
 		// Serve the single-page frontend. /api/* responses carry explicit CORS
 		// headers (see setCORS) so browser fetch works regardless of origin.
