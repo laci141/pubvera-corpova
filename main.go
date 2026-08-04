@@ -26,8 +26,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -391,7 +393,8 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 	// abstracts), so an LLM synthesis over them has nothing to judge — it
 	// yielded 0.00-confidence or unparseable verdicts. Skip the LLM for those
 	// two; consensus/compare/controversies keep the full synthesis.
-	if b.key != "" && endpoint != "gaps" && endpoint != "evidence" {
+	deep := b.key != "" && endpoint != "gaps" && endpoint != "evidence"
+	if deep {
 		syn, err := llmSynthesize(ctx, b.provider, b.key, b.model, endpoint, claims, raw)
 		if err != nil {
 			// Already sanitized/redacted by providers.go; safe for client + log-free.
@@ -407,8 +410,105 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 	if endpoint == "consensus" {
 		resp.Divergence, resp.DivergenceReason = divergenceFlag(raw, resp.LLMSynthesis)
 	}
+	// Usage is recorded HERE and nowhere earlier: reaching this line means the
+	// CLI ran (or a cache hit served its bytes) and the JSON is valid — every
+	// failure path returned before it. Quota is checked before a query runs and
+	// recorded after it succeeds, two separate calls on purpose, so a query that
+	// fails never consumes the caller's allowance.
+	kind := "base"
+	if deep {
+		kind = "deep"
+	}
+	recordUsage(r, kind)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// recordApp is this app's name in the auth service's usage ledger.
+const recordApp = "corpova"
+
+// recordTimeout bounds one recording call. It is deliberately short: the answer
+// is already computed and waiting behind it, so a sick auth service must cost
+// the caller two seconds, not two minutes. A var rather than a const only so a
+// test can shorten it; nothing in production writes it.
+var recordTimeout = 2 * time.Second
+
+// recordClient is the one client every recording call shares. A client per
+// request would build — and then abandon — a connection pool per request, which
+// under load is how a server runs out of sockets while talking to a single host.
+var recordClient = &http.Client{Timeout: recordTimeout}
+
+// recordUsage reports one successful analysis to the auth service's record
+// endpoint (POST /auth/record?app=&kind=) as an internal caller: the
+// X-Pubvera-User + X-Pubvera-Internal-Token pair rather than a bearer token.
+// kind is "deep" when the LLM synthesis ran and "base" when it did not.
+//
+// It runs server-side because that is the only place it can be trusted: a
+// browser-side call can simply be blocked by the user, and then paid queries
+// cost nothing.
+//
+// Three states skip the call entirely, and none of them is an error:
+//   - AUTH_RECORD_URL empty — recording is not configured;
+//   - INTERNAL_RECORD_TOKEN empty — same;
+//   - no X-Pubvera-User on the request, which is every request until Caddy's
+//     forward_auth is switched on and starts copying the header upstream. There
+//     is no id to attribute the usage to, and inventing one would be worse than
+//     losing the entry.
+//
+// The first two are the current deployment state, so the untouched path through
+// this function is the one that does nothing at all.
+//
+// A failed recording NEVER stops the response: the caller asked a question and
+// the answer is ready; losing a bookkeeping entry is the lesser harm compared
+// with withholding a result they are entitled to. Every path below returns
+// normally and at most logs.
+func recordUsage(r *http.Request, kind string) {
+	rawURL := strings.TrimSpace(os.Getenv("AUTH_RECORD_URL"))
+	token := strings.TrimSpace(os.Getenv("INTERNAL_RECORD_TOKEN"))
+	user := strings.TrimSpace(r.Header.Get("X-Pubvera-User"))
+	if rawURL == "" || token == "" || user == "" {
+		return
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		log.Printf("record: AUTH_RECORD_URL is not a URL: %v", err)
+		return
+	}
+	// Set on the parsed query rather than by string concatenation, so a URL that
+	// already carries parameters keeps them instead of growing a second "?".
+	q := u.Query()
+	q.Set("app", recordApp)
+	q.Set("kind", kind)
+	u.RawQuery = q.Encode()
+
+	// context.Background(), deliberately NOT the request's: the request is about
+	// to complete, and its context is cancelled the moment the handler returns —
+	// cancelling the record with it would lose exactly the entries that matter.
+	ctx, cancel := context.WithTimeout(context.Background(), recordTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
+	if err != nil {
+		log.Printf("record: build request: %v", err)
+		return
+	}
+	// The internal-caller pair. The token is a shared secret and is never logged,
+	// like every other secret this server handles.
+	req.Header.Set("X-Pubvera-User", user)
+	req.Header.Set("X-Pubvera-Internal-Token", token)
+
+	resp, err := recordClient.Do(req)
+	if err != nil {
+		log.Printf("record: %s entry failed: %v", kind, err)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// Drain (bounded) before closing so the connection goes back to the pool
+	// instead of being torn down after every call.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("record: auth service returned HTTP %d for a %s entry", resp.StatusCode, kind)
+	}
 }
 
 // runCLIRaw returns the CLI payload for one request — the cache's miss path,
