@@ -815,16 +815,6 @@
       color: #e8eef7;
       letter-spacing: -0.01em;
     }
-    .brand-sep { color: #555; }
-    .brand-app {
-      font-size: 0.95rem;
-      font-weight: 500;
-      color: #9aa4b8;
-    }
-    /* Below 600px both fixed bars shrink toward each other, so the wordmark and
-       app name are dropped and only the mark remains — a phone cannot fit an
-       email address on the right and three words on the left without them
-       colliding. */
     @media (max-width: 600px) {
       .brand-bar {
         top: 0.5rem;
@@ -833,7 +823,10 @@
         backdrop-filter: blur(11px);
         -webkit-backdrop-filter: blur(11px);
       }
-      .brand-word, .brand-sep, .brand-app { display: none; }
+      /* Same content as desktop, one step smaller. The bar never changes what
+         it says, only how large it says it: a corner that shows the brand on a
+         laptop and hides it on a phone is two different marks, not one. */
+      .brand-word { font-size: 0.82rem; }
     }
 
     /* AUTH BAR (Google sign-in) — glass panel, same treatment as .disclaimer:
@@ -942,8 +935,6 @@
       </g>
     </svg>
     <span class="brand-word">Pubvera</span>
-    <span class="brand-sep" aria-hidden="true">·</span>
-    <span class="brand-app">Corpova</span>
   </a>
 
   <!-- AUTH BAR — stays hidden until /config.json returns a Supabase config.
