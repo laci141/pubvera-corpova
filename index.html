@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Corpova — claim-level evidence analysis across the scientific literature: transparent AI filtering, dual scoring, keyless via OpenAlex.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233b82f6'/%3E%3Cg fill='%23ffffff' transform='translate(32 32) scale(0.82) translate(-32 -32)'%3E%3Crect x='6' y='11' width='42' height='8.1' rx='3.7'/%3E%3Crect x='11.3' y='24' width='31.3' height='8.1' rx='3.7'/%3E%3Crect x='16.7' y='37' width='20.7' height='8.1' rx='3.7'/%3E%3Crect x='22' y='50' width='10' height='8.1' rx='3.7'/%3E%3Crect x='51' y='25.3' width='7' height='5.5' rx='2.75' opacity='0.74'/%3E%3Crect x='51' y='38.3' width='7' height='5.5' rx='2.75' opacity='0.94'/%3E%3Crect x='51' y='51.3' width='7' height='5.5' rx='2.75'/%3E%3C/g%3E%3C/svg%3E">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -777,6 +778,64 @@
       to { transform: rotate(360deg); }
     }
 
+    /* BRAND BAR — the left-hand twin of .auth-bar. Same glass recipe, same
+       z-index band (under .modal at 1000), same mobile shrink, so the two
+       corners stay visually paired at every width. */
+    .brand-bar {
+      position: fixed;
+      top: 1rem;
+      left: 1rem;
+      z-index: 900;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.5rem 0.9rem;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      backdrop-filter: blur(15px);
+      -webkit-backdrop-filter: blur(15px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      text-decoration: none;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .brand-bar:hover {
+      border-color: rgba(96, 165, 250, 0.5);
+      transform: translateY(-1px);
+    }
+    /* currentColor drives the inlined mark, so the accent lives in exactly one
+       declaration. Another app changes this line and nothing else. */
+    .brand-mark {
+      color: #60a5fa;
+      flex-shrink: 0;
+    }
+    .brand-word {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #e8eef7;
+      letter-spacing: -0.01em;
+    }
+    .brand-sep { color: #555; }
+    .brand-app {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #9aa4b8;
+    }
+    /* Below 600px both fixed bars shrink toward each other, so the wordmark and
+       app name are dropped and only the mark remains — a phone cannot fit an
+       email address on the right and three words on the left without them
+       colliding. */
+    @media (max-width: 600px) {
+      .brand-bar {
+        top: 0.5rem;
+        left: 0.5rem;
+        padding: 0.35rem 0.5rem;
+        backdrop-filter: blur(11px);
+        -webkit-backdrop-filter: blur(11px);
+      }
+      .brand-word, .brand-sep, .brand-app { display: none; }
+    }
+
     /* AUTH BAR (Google sign-in) — glass panel, same treatment as .disclaimer:
        translucent white fill, hairline border, blur, soft drop shadow. Fixed to
        the top-right corner, which the 80vh centred hero leaves empty. z-index
@@ -865,6 +924,28 @@
 </head>
 <body>
 
+  <!-- BRAND BAR — Pubvera mark + wordmark, links back to the hub. Mirrors
+       .auth-bar on the left so the two fixed corners are symmetric. The SVG is
+       inlined rather than linked from pubvera.com: a cross-origin asset would
+       make a paywalled app depend on Cloudflare Pages being up, and inlining
+       also lets the mark inherit currentColor for the per-app accent. -->
+  <a class="brand-bar" href="https://pubvera.com" aria-label="Pubvera — back to all tools">
+    <svg class="brand-mark" viewBox="0 0 64 64" width="22" height="22" aria-hidden="true" focusable="false">
+      <g fill="currentColor">
+        <rect x="6.0" y="11.0" width="42.0" height="8.1" rx="3.7"/>
+        <rect x="11.3" y="24.0" width="31.3" height="8.1" rx="3.7"/>
+        <rect x="16.7" y="37.0" width="20.7" height="8.1" rx="3.7"/>
+        <rect x="22.0" y="50.0" width="10.0" height="8.1" rx="3.7"/>
+        <rect x="51" y="25.3" width="7" height="5.5" rx="2.75" opacity="0.55"/>
+        <rect x="51" y="38.3" width="7" height="5.5" rx="2.75" opacity="0.70"/>
+        <rect x="51" y="51.3" width="7" height="5.5" rx="2.75" opacity="0.88"/>
+      </g>
+    </svg>
+    <span class="brand-word">Pubvera</span>
+    <span class="brand-sep" aria-hidden="true">·</span>
+    <span class="brand-app">Corpova</span>
+  </a>
+
   <!-- AUTH BAR — stays hidden until /config.json returns a Supabase config.
        Without one the page never loads Supabase and behaves exactly as it did
        before sign-in existed. Wired up by the module script at the end. -->
@@ -876,7 +957,7 @@
 
   <!-- HERO SECTION -->
   <section class="hero">
-    <h1>🧬 Pubvera · Corpova</h1>
+    <h1>🧬 Corpova</h1>
     <p>Claim-level evidence analysis across the scientific literature — transparent filtering, dual scoring, keyless via OpenAlex.</p>
     <div class="claim-input-box">
       <textarea id="heroClaimInput" placeholder="e.g., 'Vitamin D reduces respiratory infections'"></textarea>
