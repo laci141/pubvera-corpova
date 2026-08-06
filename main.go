@@ -604,18 +604,31 @@ func runCLIOnce(ctx context.Context, args []string) ([]byte, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
+	// Only args[0] (the fixed subcommand) may be logged: the remaining args
+	// carry the user's claim text, which must never reach the server log.
+	sub := "(none)"
+	if len(args) > 0 {
+		sub = args[0]
+	}
+
+	start := time.Now()
+	err := cmd.Run()
+	elapsedMS := time.Since(start).Milliseconds()
+	if err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
 		}
+		log.Printf("cli: %s failed after %dms: %s", sub, elapsedMS, truncate(msg, 300))
 		return nil, &cliError{status: http.StatusBadGateway, msg: "CLI failed: " + msg}
 	}
 
 	raw := bytes.TrimSpace(stdout.Bytes())
 	if !json.Valid(raw) {
+		log.Printf("cli: %s returned non-JSON output after %dms (%d bytes)", sub, elapsedMS, len(raw))
 		return nil, &cliError{status: http.StatusBadGateway, msg: "CLI returned non-JSON output"}
 	}
+	log.Printf("cli: %s ok in %dms (%d bytes)", sub, elapsedMS, len(raw))
 	return raw, nil
 }
 
@@ -762,6 +775,16 @@ func redact(s, key string) string {
 		return s
 	}
 	return strings.ReplaceAll(s, key, "[REDACTED]")
+}
+
+// truncate shortens s to at most max runes, appending "..." when it actually
+// cut something. Rune-based so it can never split a multi-byte character.
+func truncate(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "..."
 }
 
 // quoteToken quotes a short untrusted token for safe inclusion in an error
