@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -199,6 +200,37 @@ func compactStudyObject(obj map[string]json.RawMessage, maxStudies int) bool {
 	return changed
 }
 
+// llmStudyCount reports how many all_studies entries survive compaction, for
+// the pre-call log line only: it recounts on compactForLLM's output rather
+// than threading a count out of synthesisPrompt, so no signatures change.
+// Returns -1 when the output carries no all_studies array at all (evidence,
+// gaps, controversies, or an older CLI binary).
+func llmStudyCount(raw []byte) int {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(compactForLLM(raw), &obj); err != nil {
+		return -1
+	}
+	total, found := 0, false
+	count := func(o map[string]json.RawMessage) {
+		var list []json.RawMessage
+		if rawList, ok := o["all_studies"]; ok && json.Unmarshal(rawList, &list) == nil {
+			total += len(list)
+			found = true
+		}
+	}
+	count(obj)
+	for _, k := range []string{"claim_a", "claim_b"} {
+		var sub map[string]json.RawMessage
+		if rawSub, ok := obj[k]; ok && json.Unmarshal(rawSub, &sub) == nil {
+			count(sub)
+		}
+	}
+	if !found {
+		return -1
+	}
+	return total
+}
+
 // synthesisPrompt builds the single user message sent to the LLM. It now asks
 // the model to act as a strict relevance/quality filter: examine each study by
 // abstract content (title as fallback), set aside off-topic or methodologically
@@ -306,30 +338,53 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
 
+	// Log lines carry only provider/model names, sizes, counts, and
+	// key-redacted error strings — never the key, a header, the prompt, the
+	// payload, or claim text.
+	log.Printf("llm: call provider=%s model=%s payload_bytes=%d studies=%d",
+		provider, model, len(body), llmStudyCount(cliJSON))
+	start := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		// Transport errors can embed the URL but never the key (it travels in a
 		// header); sanitize anyway.
-		return nil, errors.New("request failed: " + sanitizeLLMError(err.Error(), key))
+		msg := "request failed: " + sanitizeLLMError(err.Error(), key)
+		log.Printf("llm: fail provider=%s elapsed_ms=%d err=%s",
+			provider, time.Since(start).Milliseconds(), truncate(msg, 300))
+		return nil, errors.New(msg)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, errors.New("read response: " + sanitizeLLMError(err.Error(), key))
+		msg := "read response: " + sanitizeLLMError(err.Error(), key)
+		log.Printf("llm: fail provider=%s elapsed_ms=%d err=%s",
+			provider, time.Since(start).Milliseconds(), truncate(msg, 300))
+		return nil, errors.New(msg)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("provider returned HTTP %d: %s", resp.StatusCode, sanitizeLLMError(string(respBody), key))
+		msg := fmt.Sprintf("provider returned HTTP %d: %s", resp.StatusCode, sanitizeLLMError(string(respBody), key))
+		log.Printf("llm: fail provider=%s elapsed_ms=%d err=%s",
+			provider, time.Since(start).Milliseconds(), truncate(msg, 300))
+		return nil, errors.New(msg)
 	}
 
 	text, err := extractChatText(spec.Style, respBody)
 	if err != nil {
-		return nil, errors.New(sanitizeLLMError(err.Error(), key))
+		msg := sanitizeLLMError(err.Error(), key)
+		log.Printf("llm: badshape provider=%s elapsed_ms=%d resp_bytes=%d err=%s",
+			provider, time.Since(start).Milliseconds(), len(respBody), truncate(msg, 300))
+		return nil, errors.New(msg)
 	}
 	syn, err := parseSynthesis(text)
 	if err != nil {
-		return nil, errors.New("unparseable synthesis: " + sanitizeLLMError(err.Error(), key))
+		msg := "unparseable synthesis: " + sanitizeLLMError(err.Error(), key)
+		log.Printf("llm: badshape provider=%s elapsed_ms=%d resp_bytes=%d err=%s",
+			provider, time.Since(start).Milliseconds(), len(respBody), truncate(msg, 300))
+		return nil, errors.New(msg)
 	}
 	syn.Model = model
+	log.Printf("llm: ok provider=%s elapsed_ms=%d resp_bytes=%d",
+		provider, time.Since(start).Milliseconds(), len(respBody))
 	return syn, nil
 }
 
