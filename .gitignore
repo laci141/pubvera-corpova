@@ -10,3 +10,4 @@ bin/server*
 #   bin/scientific-consensus-pp-cli-linux   <- intentionally NOT ignored
 
 .DS_Store
+PROMPT.md
