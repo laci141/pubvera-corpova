@@ -264,7 +264,9 @@ func synthesisPrompt(endpoint string, claims []string, cliJSON []byte) string {
 		"Respond with ONLY a JSON object, no markdown fences, with exactly these fields:\n" +
 		`{"stance":"supports|refutes|mixed|insufficient","confidence":0.0,"reasoning":"2-4 sentence synthesis based only on the studies you kept","key_evidence":["3-5 short points, each referencing specific numbers or studies you kept"],"excluded_studies":[{"title":"study title copied from the tool output","reason":"short reason, e.g. off-topic: about X not the claim / animal model only / in-vitro only / different substance"}]}` + "\n" +
 		"stance is your overall verdict on claim 1 (for comparisons, weigh both claims and explain in reasoning). confidence is 0-1. Leave excluded_studies as [] only if every study is genuinely relevant. " +
-		"Never attribute an outcome to a study that its abstract does not report measuring.")
+		"Never attribute an outcome to a study that its abstract does not report measuring. " +
+		"excluded_studies must contain ONLY studies you actually discarded and did NOT use for your stance, confidence, or key_evidence; a study you cite as evidence must never appear there, and lower evidence tier is never by itself a reason to exclude. " +
+		"If you want to note a study's limitations while still using it, put that in reasoning, not in excluded_studies.")
 	return b.String()
 }
 
