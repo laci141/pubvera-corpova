@@ -55,6 +55,50 @@ jobs:
           echo "PASS=$PASS FAIL=$FAIL SKIP=$SKIP" >> $GITHUB_STEP_SUMMARY
           if [ "$FAIL" != "0" ]; then exit 1; fi
 
+      - name: Check inline JavaScript
+        run: |
+          # go vet does not see the JavaScript embedded in index.html, so a
+          # missing bracket there ships green and breaks the page at runtime.
+          # Each <script> block is extracted and parsed with node --check.
+          # A file that exists but yields no checkable block fails the build:
+          # silently checking nothing is the failure mode this guards against.
+          set -euo pipefail
+          html=""
+          for candidate in index.html web/index.html; do
+            if [ -f "$candidate" ]; then html="$candidate"; break; fi
+          done
+          if [ -z "$html" ]; then
+            echo "no index.html found - nothing to check"
+            exit 0
+          fi
+          echo "checking $html"
+          tmp=$(mktemp -d)
+          node -e '
+            const fs = require("fs"), path = require("path");
+            const html = fs.readFileSync(process.argv[1], "utf8");
+            const dir = process.argv[2];
+            const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+            let m, i = 0;
+            while ((m = re.exec(html)) !== null) {
+              const attrs = m[1], body = m[2];
+              if (body.trim() === "") continue;
+              if (/\stype\s*=\s*["\x27](?!text\/javascript|module)/i.test(attrs)) continue;
+              const isModule = /\stype\s*=\s*["\x27]module["\x27]/i.test(attrs);
+              i += 1;
+              fs.writeFileSync(path.join(dir, "block" + i + (isModule ? ".mjs" : ".js")), body);
+            }
+            console.log(i);
+          ' "$html" "$tmp" > "$tmp/count"
+          n=$(cat "$tmp/count")
+          if [ "$n" -eq 0 ]; then
+            echo "$html contains no inline script block - refusing to pass silently"
+            exit 1
+          fi
+          for f in "$tmp"/block*; do
+            node --check "$f"
+          done
+          echo "$n inline block(s) parse"
+
   build:
     needs: test
     if: github.event_name != 'pull_request'
