@@ -1727,7 +1727,14 @@
       const id = normDoi(r.doi || r.DOI) || w.join(' ');
       return uniqueKey((w[0] || 'ref') + y + (w[1] || '') + '_' + hash3(id), used);
     }
-    function bibEsc(v) { return String(v == null ? '' : v).replace(/[{}\\]/g, '').trim(); }
+    // Typographic dashes are folded to ASCII here, in the one place every BibTeX
+    // field passes through: biblatex/UTF-8 copes with them, but classic BibTeX
+    // read as latin1 mangles the byte and the whole entry fails to import.
+    function bibEsc(v) {
+      return String(v == null ? '' : v)
+        .replace(/[‐‑‒–—―−]/g, '-')
+        .replace(/[{}\\]/g, '').trim();
+    }
 
     function toBibTeX(rows, used) {
       const out = [];
@@ -1747,7 +1754,12 @@
         if (year)    lines.push('  year    = {' + year + '},');
         if (doi)     lines.push('  doi     = {' + doi + '},');
         if (doi)     lines.push('  url     = {https://doi.org/' + doi + '},');
-        lines.push('  note    = {Exported from Corpova; metadata via OpenAlex (CC0)}');
+        // For a PRISMA excluded-studies list the reason IS the payload: without it
+        // the import is just a pile of papers with no record of why they were set
+        // aside. Labelled so it cannot be read as part of the provenance sentence.
+        const reason = bibEsc(r.exclusion_reason || '');
+        lines.push('  note    = {Exported from Corpova; metadata via OpenAlex (CC0)'
+          + (reason ? '. Exclusion reason: ' + reason : '') + '}');
         lines.push('}');
         out.push(lines.join('\n'));
       });
