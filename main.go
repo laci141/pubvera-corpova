@@ -628,7 +628,18 @@ func runCLIOnce(ctx context.Context, args []string) ([]byte, error) {
 		log.Printf("cli: %s returned non-JSON output after %dms (%d bytes)", sub, elapsedMS, len(raw))
 		return nil, &cliError{status: http.StatusBadGateway, msg: "CLI returned non-JSON output"}
 	}
-	log.Printf("cli: %s ok in %dms (%d bytes)", sub, elapsedMS, len(raw))
+	// A successful run can still have written to stderr, and those messages are
+	// the ones worth seeing: the CLI warns there when the OpenAlex per-IP quota
+	// is nearly spent, and prints its rate-limit and server-error retries the
+	// same way. All of them happen while the command goes on to succeed, so
+	// logging stderr only on failure discarded exactly the warnings that arrive
+	// early enough to act on. Truncated like the failure path, and never sent to
+	// the client: this is operator information, not an error.
+	if w := strings.TrimSpace(stderr.String()); w != "" {
+		log.Printf("cli: %s ok in %dms (%d bytes) — stderr: %s", sub, elapsedMS, len(raw), truncate(w, 300))
+	} else {
+		log.Printf("cli: %s ok in %dms (%d bytes)", sub, elapsedMS, len(raw))
+	}
 	return raw, nil
 }
 
