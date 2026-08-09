@@ -1390,6 +1390,25 @@
       if (modelElem) localStorage.setItem(storageKeys.model, modelElem.value);
     }
 
+    // loadSettings existed but was never called, so a key typed into one modal
+    // was written to localStorage on Run and then never read back — the field
+    // came up empty on every visit and the key had to be retyped each time.
+    // Measured in the browser: localStorage held only the Supabase session,
+    // none of sc_llm_key, sc_provider or sc_model, while a direct probe showed
+    // storage itself working and both functions defined and reachable.
+    //
+    // Saving on input as well as on Run means a key survives a page that is
+    // closed before any analysis is run, which is how it was most often lost.
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSettings();
+      ['consensus', 'evidence', 'compare', 'gaps', 'controversies'].forEach(ep => {
+        ['Key', 'Provider', 'Model'].forEach(field => {
+          const el = document.getElementById(`${ep}${field}`);
+          if (el) el.addEventListener('input', () => saveSettings(ep));
+        });
+      });
+    });
+
     // Copy the hero claim into a freshly-opened modal's claim field for convenience.
     function openModal(endpoint) {
       const modal = document.getElementById(`${endpoint}Modal`);
