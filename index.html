@@ -1752,7 +1752,10 @@
     function bibEsc(v) {
       return String(v == null ? '' : v)
         .replace(/[‐‑‒–—―−]/g, '-')
-        .replace(/[{}\\]/g, '').trim();
+        .replace(/[{}\\]/g, '')
+        // After the backslash strip, never before it — otherwise the escape we
+        // just added would be stripped straight back out.
+        .replace(/&/g, '\\&').trim();
     }
 
     function toBibTeX(rows, used) {
@@ -1766,17 +1769,20 @@
         const authors = Array.isArray(r.authors)
           ? r.authors.map(a => bibEsc(typeof a === 'string' ? a : (a && (a.name || a.author_name) || ''))).filter(Boolean).join(' and ')
           : bibEsc(r.authors || r.author || '');
-        const lines = ['@article{' + bibKey(r, used) + ','];
+        // For a PRISMA excluded-studies list the reason IS the payload: without it
+        // the import is just a pile of papers with no record of why they were set
+        // aside. Labelled so it cannot be read as part of the provenance sentence.
+        const reason = bibEsc(r.exclusion_reason || '');
+        // An excluded record with neither year nor DOI is not a citable article —
+        // @article with those fields missing trips biblatex's required-field check.
+        const type = (reason && !year && !doi) ? '@misc{' : '@article{';
+        const lines = [type + bibKey(r, used) + ','];
         lines.push('  title   = {' + title + '},');
         if (authors) lines.push('  author  = {' + authors + '},');
         if (journal) lines.push('  journal = {' + journal + '},');
         if (year)    lines.push('  year    = {' + year + '},');
         if (doi)     lines.push('  doi     = {' + doi + '},');
         if (doi)     lines.push('  url     = {https://doi.org/' + doi + '},');
-        // For a PRISMA excluded-studies list the reason IS the payload: without it
-        // the import is just a pile of papers with no record of why they were set
-        // aside. Labelled so it cannot be read as part of the provenance sentence.
-        const reason = bibEsc(r.exclusion_reason || '');
         lines.push('  note    = {Exported from Corpova; metadata via OpenAlex (CC0)'
           + (reason ? '. Exclusion reason: ' + reason : '') + '}');
         lines.push('}');
