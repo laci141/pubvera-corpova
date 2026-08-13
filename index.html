@@ -16,6 +16,18 @@
       color: #e0e0e0;
       line-height: 1.6;
       min-height: 100vh;
+      /* Clearance for the fixed .brand-bar, derived rather than measured, so it
+         tracks the root font size instead of freezing one browser's pixels:
+         0.5rem × 2 of bar padding + the 1px hairline border + the tallest child.
+         The three candidate children are the wordmark's line box
+         (0.95rem × 1.6), the mark (a fixed 22px in the SVG attributes, so it
+         stays px here) and the auth button (its line box + 0.35rem × 2 padding
+         + its 1px borders). Buttons resolve to `line-height: normal`, which no
+         stylesheet states, so that one term is an upper bound rather than an
+         exact derivation: 1.2 is used for it, a shade above the ~1.15 the font
+         actually measures. Reserving a pixel or two too many is invisible;
+         reserving too few slides the title under the bar. */
+      padding-top: calc(1rem + 1px + max(1.52rem, 22px, 1.636rem + 2px));
     }
     /* Colored radial glow behind everything so the glass blur has something
        to diffuse (glass-panel baseline). */
@@ -36,18 +48,17 @@
        a hard 80vh left 436px of it empty on a 1080px-tall viewport — the claim
        box sat alone above a large gap. min-height also removes the old failure
        mode where a short viewport made the content overflow its own padding.
-       The 4.5rem top padding is not decoration: .auth-bar is position:fixed at
-       top:1rem and ~54px tall (bottom edge ~74px), so anything less would let
-       it overlap the title once the hero stopped pushing the title down.
-       Bottom padding is smaller than top because .bento-grid below already
-       brings its own 4rem of breathing room. */
+       The top padding is breathing room and nothing more: clearance for the
+       fixed top bar is reserved by body's padding-top, so the hero no longer
+       has to carry it. Bottom padding is smaller than top because .bento-grid
+       below already brings its own 4rem of breathing room. */
     .hero {
       min-height: 40vh;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      padding: 4.5rem 2rem 1.5rem;
+      padding: 2rem 2rem 1.5rem;
       text-align: center;
       background: linear-gradient(180deg, rgba(15,15,15,1) 0%, rgba(26,26,46,0.8) 100%);
     }
@@ -782,30 +793,38 @@
       to { transform: rotate(360deg); }
     }
 
-    /* BRAND BAR — the left-hand twin of .auth-bar. Same glass recipe, same
-       z-index band (under .modal at 1000), same mobile shrink, so the two
-       corners stay visually paired at every width. */
+    /* TOP BAR — one fixed full-width bar holding the brand link on the left and
+       the auth controls on the right. Glass recipe as elsewhere on the page, but
+       a hairline border-bottom instead of a full border and radius, and no hover
+       lift: a pill can rise off the page, an edge-to-edge bar cannot. z-index
+       stays under .modal (1000) so an open modal covers it rather than fighting
+       it. body reserves its height as padding-top. */
     .brand-bar {
       position: fixed;
-      top: 1rem;
-      left: 1rem;
+      top: 0;
+      left: 0;
+      right: 0;
       z-index: 900;
       display: flex;
       align-items: center;
       gap: 0.45rem;
       padding: 0.5rem 0.9rem;
       background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 999px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       backdrop-filter: blur(15px);
       -webkit-backdrop-filter: blur(15px);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-      text-decoration: none;
-      transition: border-color 0.2s, transform 0.2s;
     }
-    .brand-bar:hover {
-      border-color: rgba(96, 165, 250, 0.5);
-      transform: translateY(-1px);
+    /* Only the mark and the word link to the hub — the auth controls sit in the
+       same bar but are not part of the link, so the anchor cannot be the bar. */
+    .brand-link {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      text-decoration: none;
+    }
+    .brand-link:hover .brand-word {
+      color: #60a5fa;
     }
     /* currentColor drives the inlined mark, so the accent lives in exactly one
        declaration. Another app changes this line and nothing else. */
@@ -818,48 +837,43 @@
       font-weight: 700;
       color: #e8eef7;
       letter-spacing: -0.01em;
+      transition: color 0.2s;
     }
     @media (max-width: 600px) {
       .brand-bar {
-        top: 0.5rem;
-        left: 0.5rem;
         padding: 0.35rem 0.5rem;
         backdrop-filter: blur(11px);
         -webkit-backdrop-filter: blur(11px);
       }
       /* Same content as desktop, one step smaller. The bar never changes what
-         it says, only how large it says it: a corner that shows the brand on a
+         it says, only how large it says it: a bar that shows the brand on a
          laptop and hides it on a phone is two different marks, not one. */
       .brand-word { font-size: 0.82rem; }
+      /* Same derivation as the desktop rule, with this breakpoint's numbers:
+         0.35rem × 2 bar padding + 1px border + max(word 0.82rem × 1.6,
+         mark 22px, button 0.72rem × 1.2 + 0.3rem × 2 + 2px). */
+      body { padding-top: calc(0.7rem + 1px + max(1.312rem, 22px, 1.464rem + 2px)); }
     }
 
-    /* AUTH BAR (Google sign-in) — glass panel, same treatment as .disclaimer:
-       translucent white fill, hairline border, blur, soft drop shadow. Fixed to
-       the top-right corner, which the 80vh centred hero leaves empty. z-index
-       stays under .modal (1000) so an open modal covers it rather than fighting
-       it. Hidden until /config.json returns a Supabase config. */
+    /* AUTH CONTROLS (Google sign-in) — the right-hand group of the top bar,
+       pushed over by margin-left:auto. No surface of its own: the bar is the
+       glass, and a nested pill would double the fill and the blur. min-width:0
+       so the group may shrink, which is what lets .auth-email ellipsis instead
+       of forcing the bar wider than the viewport. Hidden until /config.json
+       returns a Supabase config. */
     .auth-bar {
-      position: fixed;
-      top: 1rem;
-      right: 1rem;
-      z-index: 900;
+      margin-left: auto;
+      min-width: 0;
       display: flex;
       align-items: center;
       gap: 0.6rem;
-      max-width: calc(100vw - 2rem);
-      padding: 0.5rem 0.75rem;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 999px;
-      backdrop-filter: blur(15px);
-      -webkit-backdrop-filter: blur(15px);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     }
     /* display:flex above would otherwise defeat the hidden attribute. */
     .auth-bar[hidden] { display: none; }
     .auth-email {
       font-size: 0.82rem;
       color: #cdd6ea;
+      min-width: 0;
       max-width: 42vw;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -894,14 +908,7 @@
       box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
     }
     @media (max-width: 600px) {
-      .auth-bar {
-        top: 0.5rem;
-        right: 0.5rem;
-        gap: 0.4rem;
-        padding: 0.35rem 0.5rem;
-        backdrop-filter: blur(11px);
-        -webkit-backdrop-filter: blur(11px);
-      }
+      .auth-bar { gap: 0.4rem; }
       .auth-email { font-size: 0.72rem; max-width: 38vw; }
       .auth-btn { font-size: 0.72rem; padding: 0.3rem 0.7rem; }
     }
@@ -909,10 +916,9 @@
     /* RESPONSIVE */
     @media (max-width: 768px) {
       .hero h1 { font-size: 2rem; }
-      /* The auth bar shrinks below 600px (top:0.5rem, smaller buttons), so the
-         title needs less clearance than on desktop — and a short phone viewport
-         cannot spare 5.5rem of it. */
-      .hero { padding-top: 4rem; }
+      /* A short phone viewport cannot spare as much empty space above the
+         title as a desktop one. */
+      .hero { padding-top: 1.5rem; }
       .claim-input-box textarea { height: 80px; }
       .modal-content { max-width: 95%; padding: 1.5rem; }
       .bento-grid { grid-template-columns: 1fr; }
@@ -921,12 +927,13 @@
 </head>
 <body>
 
-  <!-- BRAND BAR — Pubvera mark + wordmark, links back to the hub. Mirrors
-       .auth-bar on the left so the two fixed corners are symmetric. The SVG is
-       inlined rather than linked from pubvera.com: a cross-origin asset would
-       make a paywalled app depend on Cloudflare Pages being up, and inlining
-       also lets the mark inherit currentColor for the per-app accent. -->
-  <a class="brand-bar" href="https://pubvera.com" aria-label="Pubvera — back to all tools">
+  <!-- TOP BAR — Pubvera mark + wordmark on the left, linking back to the hub,
+       and the auth controls on the right. The SVG is inlined rather than linked
+       from pubvera.com: a cross-origin asset would make a paywalled app depend
+       on Cloudflare Pages being up, and inlining also lets the mark inherit
+       currentColor for the per-app accent. -->
+  <header class="brand-bar">
+  <a class="brand-link" href="https://pubvera.com" aria-label="Pubvera — back to all tools">
     <svg class="brand-mark" viewBox="0 0 64 64" width="22" height="22" aria-hidden="true" focusable="false">
       <g fill="currentColor">
         <rect x="6.0" y="11.0" width="42.0" height="8.1" rx="3.7"/>
@@ -941,7 +948,7 @@
     <span class="brand-word">Pubvera</span>
   </a>
 
-  <!-- AUTH BAR — stays hidden until /config.json returns a Supabase config.
+  <!-- AUTH CONTROLS — stay hidden until /config.json returns a Supabase config.
        Without one the page never loads Supabase and behaves exactly as it did
        before sign-in existed. Wired up by the module script at the end. -->
   <div class="auth-bar" id="authBar" hidden>
@@ -949,6 +956,7 @@
     <button type="button" class="auth-btn auth-btn-primary" id="authSignInBtn" hidden>Sign in with Google</button>
     <button type="button" class="auth-btn" id="authSignOutBtn" hidden>Sign out</button>
   </div>
+  </header>
 
   <!-- HERO SECTION -->
   <section class="hero">
