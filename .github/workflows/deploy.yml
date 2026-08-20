@@ -36,11 +36,11 @@ jobs:
         run: |
           UNFORMATTED=$(gofmt -l .)
           if [ -n "$UNFORMATTED" ]; then
-            echo "gofmt talalt formazatlan fajlokat:"
+            echo "gofmt found unformatted files:"
             echo "$UNFORMATTED"
             exit 1
           fi
-          echo "gofmt: nulla sor"
+          echo "gofmt: zero files"
 
       - name: Test with race detector
         run: go test ./... -count=1 -race -v 2>&1 | tee test.log
