@@ -314,7 +314,11 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 	switch spec.Style {
 	case styleAnthropic:
 		url = spec.BaseURL + "/messages"
-		payload = anthropicRequest{Model: model, MaxTokens: 1024, Messages: []chatMessage{{Role: "user", Content: prompt}}}
+		// 1024 truncated the more verbose models mid-object: the response ended
+		// with stop_reason "max_tokens", parseSynthesis found a stray closing
+		// brace, and the whole synthesis was discarded as unparseable. This is a
+		// ceiling, not a target — a short answer still costs only what it uses.
+		payload = anthropicRequest{Model: model, MaxTokens: 4096, Messages: []chatMessage{{Role: "user", Content: prompt}}}
 	default:
 		url = spec.BaseURL + "/chat/completions"
 		reqPayload := openAIRequest{Model: model, Messages: []chatMessage{{Role: "user", Content: prompt}}}
