@@ -1758,12 +1758,13 @@
     // field passes through: biblatex/UTF-8 copes with them, but classic BibTeX
     // read as latin1 mangles the byte and the whole entry fails to import.
     function bibEsc(v) {
-      return String(v == null ? '' : v)
-        .replace(/[‐‑‒–—―−]/g, '-')
-        .replace(/[{}\\]/g, '')
-        // After the backslash strip, never before it — otherwise the escape we
-        // just added would be stripped straight back out.
-        .replace(/&/g, '\\&').trim();
+      return String(v == null ? "" : v)
+        .replace(/[‐‑‒–—―−]/g, "-")
+        .replace(/[{}\\]/g, "")
+        .replace(/([&%#_$])/g, "\\$1")
+        .replace(/\^/g, "\\textasciicircum{}")
+        .replace(/~/g, "\\textasciitilde{}")
+        .trim();
     }
 
     function toBibTeX(rows, used) {
