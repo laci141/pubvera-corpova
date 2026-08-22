@@ -108,6 +108,11 @@ type llmSynthesis struct {
 	KeyEvidence     []string        `json:"key_evidence"`
 	ExcludedStudies []excludedStudy `json:"excluded_studies"`
 	Model           string          `json:"model"`
+	// InputTokens and OutputTokens are the provider's own counts for this
+	// call, carried out so the caller can price the request against the
+	// user's budget. Zero when the provider omitted a usage block.
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
 }
 
 // maxCLIJSONForPrompt caps how much CLI output is embedded in the prompt so
@@ -391,8 +396,12 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		return nil, errors.New(msg)
 	}
 	syn.Model = model
-	log.Printf("llm: ok provider=%s elapsed_ms=%d resp_bytes=%d",
-		provider, time.Since(start).Milliseconds(), len(respBody))
+	usage := extractUsage(spec.Style, respBody)
+	syn.InputTokens = usage.InputTokens
+	syn.OutputTokens = usage.OutputTokens
+	log.Printf("llm: ok provider=%s model=%s elapsed_ms=%d resp_bytes=%d in_tok=%d out_tok=%d",
+		provider, model, time.Since(start).Milliseconds(), len(respBody),
+		usage.InputTokens, usage.OutputTokens)
 	return syn, nil
 }
 
@@ -429,6 +438,42 @@ func extractChatText(style authStyle, body []byte) (string, error) {
 		return "", errors.New("provider response contained no choices")
 	}
 	return r.Choices[0].Message.Content, nil
+}
+
+// tokenUsage carries the provider-reported token counts for one call. Both
+// API styles report them, under different names; extractUsage normalises to
+// one shape so the caller does not branch on style a second time.
+type tokenUsage struct {
+	InputTokens  int
+	OutputTokens int
+}
+
+// extractUsage pulls the token counts out of a provider response. Failure is
+// not an error: a missing or malformed usage block yields a zero-value
+// tokenUsage, and a zero-cost log line is better than a dropped analysis.
+func extractUsage(style authStyle, body []byte) tokenUsage {
+	if style == styleAnthropic {
+		var r struct {
+			Usage struct {
+				InputTokens  int `json:"input_tokens"`
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
+		}
+		if err := json.Unmarshal(body, &r); err != nil {
+			return tokenUsage{}
+		}
+		return tokenUsage{InputTokens: r.Usage.InputTokens, OutputTokens: r.Usage.OutputTokens}
+	}
+	var r struct {
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return tokenUsage{}
+	}
+	return tokenUsage{InputTokens: r.Usage.PromptTokens, OutputTokens: r.Usage.CompletionTokens}
 }
 
 // parseSynthesis parses the model's JSON verdict, tolerating markdown fences
