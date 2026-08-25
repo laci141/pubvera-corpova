@@ -78,6 +78,25 @@ var providers = map[string]providerSpec{
 	"openrouter": {"https://openrouter.ai/api/v1", "deepseek/deepseek-chat", styleOpenAI, true},
 }
 
+// deterministicProviders are the providers known to accept temperature 0.
+//
+// The parameter is not sent to anything else, and that is the whole point of
+// keeping this list rather than a field on providerSpec: OpenAI's reasoning
+// models reject any temperature other than the default, so a value sent
+// blindly would turn a working provider into a hard error. A provider absent
+// here gets exactly the request bytes it got before this list existed.
+//
+// Temperature 0 reduces run-to-run variation; it does not remove it. Providers
+// batch requests and sum floating point in whatever order the batch happens to
+// take, so the same question can still come back with a different verdict.
+// Measured on 2026-08-25: three identical deepseek-chat runs over the same 98
+// studies returned "mixed" once and "refutes" twice, while the heuristic score
+// was identical every time.
+var deterministicProviders = map[string]bool{
+	"anthropic": true,
+	"deepseek":  true,
+}
+
 // supportedProviders is the sorted name list used in error messages.
 var supportedProviders = func() string {
 	names := make([]string, 0, len(providers))
@@ -275,8 +294,10 @@ func synthesisPrompt(endpoint string, claims []string, cliJSON []byte) string {
 	return b.String()
 }
 
-// openAIRequest / anthropicRequest are the minimal wire shapes. temperature is
-// deliberately omitted (some providers reject non-default values).
+// openAIRequest / anthropicRequest are the minimal wire shapes. Temperature is
+// sent only to the providers in deterministicProviders — some others reject
+// any non-default value — and is a pointer so it disappears from the request
+// for everyone else.
 type chatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -290,15 +311,20 @@ type responseFormat struct {
 }
 
 type openAIRequest struct {
-	Model          string          `json:"model"`
-	Messages       []chatMessage   `json:"messages"`
+	Model    string        `json:"model"`
+	Messages []chatMessage `json:"messages"`
+	// A pointer, so omitempty leaves the field out entirely for providers not
+	// in deterministicProviders. A plain float64 would serialise as 0 for
+	// everyone and send the very value some of them refuse.
+	Temperature    *float64        `json:"temperature,omitempty"`
 	ResponseFormat *responseFormat `json:"response_format,omitempty"`
 }
 
 type anthropicRequest struct {
-	Model     string        `json:"model"`
-	MaxTokens int           `json:"max_tokens"`
-	Messages  []chatMessage `json:"messages"`
+	Model       string        `json:"model"`
+	MaxTokens   int           `json:"max_tokens"`
+	Temperature *float64      `json:"temperature,omitempty"`
+	Messages    []chatMessage `json:"messages"`
 }
 
 // llmSynthesize makes one chat call to the selected provider and parses the
@@ -316,6 +342,17 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 
 	var url string
 	var payload any
+
+	// Nil for every provider outside deterministicProviders, so omitempty
+	// leaves the field out and their request bytes stay exactly as before.
+	// This sits ahead of the switch because Go allows only case clauses
+	// directly inside one.
+	var temp *float64
+	if deterministicProviders[provider] {
+		zero := 0.0
+		temp = &zero
+	}
+
 	switch spec.Style {
 	case styleAnthropic:
 		url = spec.BaseURL + "/messages"
@@ -323,10 +360,10 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		// with stop_reason "max_tokens", parseSynthesis found a stray closing
 		// brace, and the whole synthesis was discarded as unparseable. This is a
 		// ceiling, not a target — a short answer still costs only what it uses.
-		payload = anthropicRequest{Model: model, MaxTokens: 4096, Messages: []chatMessage{{Role: "user", Content: prompt}}}
+		payload = anthropicRequest{Model: model, MaxTokens: 4096, Temperature: temp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
 	default:
 		url = spec.BaseURL + "/chat/completions"
-		reqPayload := openAIRequest{Model: model, Messages: []chatMessage{{Role: "user", Content: prompt}}}
+		reqPayload := openAIRequest{Model: model, Temperature: temp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
 		if spec.JSONFormat {
 			reqPayload.ResponseFormat = &responseFormat{Type: "json_object"}
 		}

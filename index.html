@@ -1025,7 +1025,8 @@
           </optgroup>
         </select>
         <label style="margin-top: 1rem;">Model (optional)</label>
-        <input type="text" id="consensusModel" placeholder="provider default" autocomplete="off">
+        <input type="text" id="consensusModel" placeholder="provider default" autocomplete="off" list="consensusModelOptions">
+        <datalist id="consensusModelOptions"></datalist>
         <div class="model-hint" id="consensusModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
@@ -1089,7 +1090,8 @@
           </optgroup>
         </select>
         <label style="margin-top: 1rem;">Model (optional)</label>
-        <input type="text" id="evidenceModel" placeholder="provider default" autocomplete="off">
+        <input type="text" id="evidenceModel" placeholder="provider default" autocomplete="off" list="evidenceModelOptions">
+        <datalist id="evidenceModelOptions"></datalist>
         <div class="model-hint" id="evidenceModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
@@ -1155,7 +1157,8 @@
           </optgroup>
         </select>
         <label style="margin-top: 1rem;">Model (optional)</label>
-        <input type="text" id="compareModel" placeholder="provider default" autocomplete="off">
+        <input type="text" id="compareModel" placeholder="provider default" autocomplete="off" list="compareModelOptions">
+        <datalist id="compareModelOptions"></datalist>
         <div class="model-hint" id="compareModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
@@ -1219,7 +1222,8 @@
           </optgroup>
         </select>
         <label style="margin-top: 1rem;">Model (optional)</label>
-        <input type="text" id="gapsModel" placeholder="provider default" autocomplete="off">
+        <input type="text" id="gapsModel" placeholder="provider default" autocomplete="off" list="gapsModelOptions">
+        <datalist id="gapsModelOptions"></datalist>
         <div class="model-hint" id="gapsModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
@@ -1283,7 +1287,8 @@
           </optgroup>
         </select>
         <label style="margin-top: 1rem;">Model (optional)</label>
-        <input type="text" id="controversiesModel" placeholder="provider default" autocomplete="off">
+        <input type="text" id="controversiesModel" placeholder="provider default" autocomplete="off" list="controversiesModelOptions">
+        <datalist id="controversiesModelOptions"></datalist>
         <div class="model-hint" id="controversiesModelHint"></div>
         <label style="margin-top: 1rem;">Limit (studies)</label>
         <div class="limit-wrap">
@@ -1351,6 +1356,30 @@
       openrouter: 'openrouter/free'
     };
 
+    // Suggested models per provider, offered as a datalist on the Model field.
+    // The field stays a free-text input on purpose: openrouter routes to any
+    // hosted model, so a closed dropdown would lock users out of most of it.
+    // The list only removes the need to type a model id from memory — a
+    // mistyped one reaches the provider as an unknown model and fails there,
+    // with no hint that a character was wrong.
+    //
+    // A provider absent from this map falls back to its single default above.
+    const providerModelChoices = {
+      anthropic: [
+        { id: 'claude-haiku-4-5', note: 'faster, cheaper' },
+        { id: 'claude-sonnet-4-6', note: 'more thorough, higher cost' }
+      ]
+    };
+
+    // modelChoices returns the list to offer for a provider, always including
+    // its default so the current value is never absent from its own list.
+    function modelChoices(provider) {
+      const listed = providerModelChoices[provider];
+      if (listed && listed.length) return listed;
+      const def = providerDefaults[provider];
+      return def ? [{ id: def, note: '' }] : [];
+    }
+
     // Prefill the model field with the provider default (only when empty or
     // still holding another provider's default) and refresh the hint text.
     function syncModelField(ep) {
@@ -1359,10 +1388,26 @@
       const hintElem = document.getElementById(`${ep}ModelHint`);
       if (!provElem || !modelElem) return;
       const def = providerDefaults[provElem.value] || '';
+      // The field is left EMPTY rather than prefilled with the default.
+      //
+      // A datalist filters its suggestions against whatever the field already
+      // holds, so prefilling "claude-haiku-4-5" hid claude-sonnet-4-6 from the
+      // list: the one model a user might want to switch to was the one they
+      // could not see without clearing the field first. Empty shows the whole
+      // list on the first click.
+      //
+      // Nothing is lost by leaving it blank — an empty model means the
+      // provider default, both in extractBYOK and in llmSynthesize — and the
+      // hint below the field still names which default that is.
+      //
+      // A value the user typed themselves is kept; one that is merely some
+      // other provider's default is cleared, since it would fail against the
+      // provider now selected.
       const knownDefaults = Object.values(providerDefaults);
-      if (!modelElem.value.trim() || knownDefaults.includes(modelElem.value.trim())) {
-        modelElem.value = def;
+      if (knownDefaults.includes(modelElem.value.trim())) {
+        modelElem.value = '';
       }
+      fillModelOptions(ep, provElem.value);
       if (hintElem) {
         if (provElem.value === 'openrouter') {
           hintElem.textContent = 'Free: openrouter/free · or any OpenRouter model ID';
@@ -1372,6 +1417,27 @@
           hintElem.textContent = '';
         }
       }
+    }
+
+    // fillModelOptions rebuilds the datalist behind one Model field.
+    //
+    // A datalist rather than a select: the field has to stay free text because
+    // openrouter routes to any hosted model, and because a model id released
+    // after this page was built must be typeable without waiting for a deploy.
+    // What the list removes is the need to recall an id from memory — a
+    // mistyped one reaches the provider as an unknown model and fails there,
+    // with nothing to say a single character was wrong.
+    function fillModelOptions(ep, provider) {
+      const list = document.getElementById(`${ep}ModelOptions`);
+      if (!list) return;
+      list.textContent = '';
+      modelChoices(provider).forEach(choice => {
+        const opt = document.createElement('option');
+        opt.value = choice.id;
+        // The note shows beside the id in the browser's suggestion popup.
+        if (choice.note) opt.label = `${choice.id} — ${choice.note}`;
+        list.appendChild(opt);
+      });
     }
 
     function loadSettings() {
@@ -1662,7 +1728,18 @@
       }
       ws['!cols'] = colInfo.map(ci => ({ wch: ci.wch }));
       ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(cols.length - 1, 0) } }];
-      ws['!freeze'] = { xSplit: 0, ySplit: 2 };
+      // Freeze panes cannot be written here. xlsx-js-style parses freezepanes
+      // on the way in and discards it, and its writer contains no xSplit /
+      // ySplit / topLeftCell at all — pane freezing is a SheetJS Pro feature.
+      // The '!freeze' line that used to sit here was therefore dead code, not
+      // a typo, and no property name will revive it. Verified against
+      // xlsx-js-style 1.2.0 on 2026-08-25.
+      //
+      // The autofilter does work, and it carries most of the benefit: Excel's
+      // filter row sorts and filters without scrolling to the header. It is
+      // anchored at row 2 — anchoring it at row 1 would make Excel treat the
+      // export title as the field names.
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 1, c: 0 }, e: { r: rows.length + 1, c: cols.length - 1 } }) };
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Corpova');
       XLSX.writeFile(wb, filename);
@@ -1935,11 +2012,27 @@
       return '';
     }
 
+        // Titles arrive from OpenAlex with the source publisher's own artifacts in
+    // them. Some carry the two characters backslash-n where a space belongs —
+    // an escape sequence that was never decoded upstream, so it reaches us as
+    // literal text rather than a line break. Left alone it travels into all
+    // four export formats and lands in the middle of a BibTeX title, where it
+    // looks like a LaTeX command.
+    //
+    // Real line breaks and runs of whitespace collapse to one space for the
+    // same reason: a CSV cell or a BibTeX field spanning two lines is harder
+    // for the receiving tool to read than a long single line.
+    function cleanTitle(t) {
+      return String(t == null ? '' : t)
+        .replace(/\\[nrt]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
     // Flatten one CLI study object into an export row. group records which
     // column the study was rendered in; claim is set on compare exports only.
     function studyRow(w, group, claim) {
       const row = {
-        title: w.title || '', year: w.year || '',
+        title: cleanTitle(w.title), year: w.year || '',
         citations: w.cited_by_count || 0,
         design: w.design || '', stance: w.stance || '',
         stance_confidence: w.stance_confidence != null ? w.stance_confidence : '',
