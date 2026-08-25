@@ -34,6 +34,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -419,7 +420,18 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 	if deep {
 		kind = "deep"
 	}
-	recordUsage(r, kind)
+	// The model and token counts travel with the record so the auth service can
+	// price the query. They come from resp.LLMSynthesis rather than a local
+	// variable because the synthesis is what survived the deep branch: a failed
+	// or skipped LLM call leaves it nil, and then there is nothing to price.
+	var model string
+	var inTok, outTok int
+	if resp.LLMSynthesis != nil {
+		model = resp.LLMSynthesis.Model
+		inTok = resp.LLMSynthesis.InputTokens
+		outTok = resp.LLMSynthesis.OutputTokens
+	}
+	recordUsage(r, kind, model, inTok, outTok)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -462,7 +474,7 @@ var recordClient = &http.Client{Timeout: recordTimeout}
 // the answer is ready; losing a bookkeeping entry is the lesser harm compared
 // with withholding a result they are entitled to. Every path below returns
 // normally and at most logs.
-func recordUsage(r *http.Request, kind string) {
+func recordUsage(r *http.Request, kind, model string, inputTokens, outputTokens int) {
 	rawURL := strings.TrimSpace(os.Getenv("AUTH_RECORD_URL"))
 	token := strings.TrimSpace(os.Getenv("INTERNAL_RECORD_TOKEN"))
 	user := strings.TrimSpace(r.Header.Get("X-Pubvera-User"))
@@ -480,6 +492,14 @@ func recordUsage(r *http.Request, kind string) {
 	q := u.Query()
 	q.Set("app", recordApp)
 	q.Set("kind", kind)
+	// Sent only as a complete set. Token counts without a model cannot be
+	// priced, and the auth service would drop them anyway; leaving them off
+	// keeps the request honest about what it knows.
+	if model != "" {
+		q.Set("model", model)
+		q.Set("in_tok", strconv.Itoa(inputTokens))
+		q.Set("out_tok", strconv.Itoa(outputTokens))
+	}
 	u.RawQuery = q.Encode()
 
 	// context.Background(), deliberately NOT the request's: the request is about

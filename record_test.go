@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -39,6 +40,12 @@ type recordCall struct {
 	kind   string
 	user   string
 	token  string
+	// model and the two token counts are what let the auth service price the
+	// query. They are empty on a base or cached query, which is a valid state
+	// and not a missing value: there is nothing to price.
+	model  string
+	inTok  string
+	outTok string
 }
 
 // authStub is the mocked auth service. status is what it answers with; delay is
@@ -62,6 +69,9 @@ func newAuthStub(t *testing.T, status int, delay time.Duration) *authStub {
 			kind:   r.URL.Query().Get("kind"),
 			user:   r.Header.Get("X-Pubvera-User"),
 			token:  r.Header.Get("X-Pubvera-Internal-Token"),
+			model:  r.URL.Query().Get("model"),
+			inTok:  r.URL.Query().Get("in_tok"),
+			outTok: r.URL.Query().Get("out_tok"),
 		})
 		s.mu.Unlock()
 		if delay > 0 {
@@ -88,7 +98,7 @@ func stubProvider(t *testing.T, name string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"stance\":\"supports\",\"confidence\":0.8,\"reasoning\":\"stub\",\"key_evidence\":[\"stub point\"]}"}}]}`)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"stance\":\"supports\",\"confidence\":0.8,\"reasoning\":\"stub\",\"key_evidence\":[\"stub point\"]}"}}],"usage":{"prompt_tokens":1234,"completion_tokens":567}}`)
 	}))
 	t.Cleanup(srv.Close)
 	prev := providers[name]
@@ -127,6 +137,28 @@ func analyze(t *testing.T, claim string, headers map[string]string) (int, string
 	rec := httptest.NewRecorder()
 	handleConsensus(rec, req)
 	return rec.Code, rec.Body.String()
+}
+
+// synthesisTokens digs the provider's own token counts out of an analysis
+// response. They are what the record call is expected to carry, so the test
+// asserts against the figures the run actually produced rather than against
+// numbers hardcoded here — a stub that changes its reply then cannot make this
+// test pass by accident.
+func synthesisTokens(t *testing.T, body string) (in, out int) {
+	t.Helper()
+	var resp struct {
+		LLMSynthesis *struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"llm_synthesis"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("decoding analysis response: %v", err)
+	}
+	if resp.LLMSynthesis == nil {
+		t.Fatal("no llm_synthesis in the response: the deep path did not run")
+	}
+	return resp.LLMSynthesis.InputTokens, resp.LLMSynthesis.OutputTokens
 }
 
 // recordingHarness gives a test the stub CLI and no cache, so every request
@@ -315,4 +347,76 @@ func TestRecordFailureStillSendsTheAnalysis(t *testing.T) {
 			t.Errorf("auth service saw %d calls, want 1", n)
 		}
 	})
+}
+
+// A deep query is the only one worth pricing, so it is the only one that may
+// carry a model and token counts. Without them the auth service books the row
+// at zero and the money budget never moves — which is exactly the bug this
+// whole change exists to fix.
+func TestRecordCarriesModelAndTokensOnDeepQuery(t *testing.T) {
+	recordingHarness(t)
+	stubProvider(t, "deepseek")
+
+	stub := newAuthStub(t, http.StatusNoContent, 0)
+	recordingEnv(t, stub.url(), testInternalToken)
+
+	status, body := analyze(t, "vitamin D reduces respiratory infections", map[string]string{
+		"X-Pubvera-User": testUserID,
+		"X-LLM-Key":      "test-key",
+		"X-LLM-Provider": "deepseek",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("analysis failed: status %d, body %s", status, body)
+	}
+
+	calls := stub.calls()
+	if len(calls) != 1 {
+		t.Fatalf("auth service saw %d calls, want 1: %+v", len(calls), calls)
+	}
+	got := calls[0]
+	if got.kind != "deep" {
+		t.Errorf("kind = %q, want %q: the LLM synthesis ran", got.kind, "deep")
+	}
+	// The model has to reach the ledger or the cost cannot be looked up, and an
+	// unknown model is what shows up in the auth service's warning log.
+	if got.model == "" {
+		t.Error("model is empty on a deep query, want the model that was used")
+	}
+	wantIn, wantOut := synthesisTokens(t, body)
+	if got.inTok != strconv.Itoa(wantIn) {
+		t.Errorf("in_tok = %q, want %d (the provider's own count)", got.inTok, wantIn)
+	}
+	if got.outTok != strconv.Itoa(wantOut) {
+		t.Errorf("out_tok = %q, want %d (the provider's own count)", got.outTok, wantOut)
+	}
+}
+
+// A base query has no model and no tokens, and must not invent them: sending a
+// zero-token count for a named model would tell the auth service to price a
+// call that never happened.
+func TestRecordOmitsModelAndTokensOnBaseQuery(t *testing.T) {
+	recordingHarness(t)
+
+	stub := newAuthStub(t, http.StatusNoContent, 0)
+	recordingEnv(t, stub.url(), testInternalToken)
+
+	status, body := analyze(t, "vitamin D reduces respiratory infections", map[string]string{
+		"X-Pubvera-User": testUserID,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("analysis failed: status %d, body %s", status, body)
+	}
+
+	calls := stub.calls()
+	if len(calls) != 1 {
+		t.Fatalf("auth service saw %d calls, want 1: %+v", len(calls), calls)
+	}
+	got := calls[0]
+	if got.kind != "base" {
+		t.Errorf("kind = %q, want %q", got.kind, "base")
+	}
+	if got.model != "" || got.inTok != "" || got.outTok != "" {
+		t.Errorf("pricing parameters are present on a base query: model=%q in_tok=%q out_tok=%q",
+			got.model, got.inTok, got.outTok)
+	}
 }
