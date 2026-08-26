@@ -353,6 +353,14 @@ var cliPacingArgs = []string{"--rate-limit", "0.15", "--timeout", "100s"}
 // llm_error. It centralizes the exec, timeouts, key-redaction, and
 // JSON-validation shared by every endpoint.
 func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string, claims []string, args []string, cacheKey string) {
+	// The plan gate runs first — before the CLI child, and therefore before the
+	// llmSynthesize call further down. A refused request must not consume an
+	// OpenAlex run it will never be allowed to synthesize over, and nothing has
+	// been written to the response body yet, so a 403 is still possible here.
+	if !enforceTierGate(w, r, b, endpoint) {
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
@@ -390,11 +398,7 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 		StanceSource: "heuristic",
 		Result:       json.RawMessage(raw),
 	}
-	// gaps and evidence emit summary statistics only (no study list, no
-	// abstracts), so an LLM synthesis over them has nothing to judge — it
-	// yielded 0.00-confidence or unparseable verdicts. Skip the LLM for those
-	// two; consensus/compare/controversies keep the full synthesis.
-	deep := b.key != "" && endpoint != "gaps" && endpoint != "evidence"
+	deep := llmWillRun(b, endpoint)
 	if deep {
 		syn, err := llmSynthesize(ctx, b.provider, b.key, b.model, endpoint, claims, raw)
 		if err != nil {
