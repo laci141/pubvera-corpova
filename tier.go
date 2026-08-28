@@ -6,12 +6,20 @@ import (
 	"strings"
 )
 
-// The free plan is allowed exactly one model, on exactly one provider. The pair
-// is hardcoded here on purpose: model_pricing.min_tier exists in the database
-// but is not consulted by this service, so the gate must not depend on a
-// database round trip in the request path.
+// Tiers that may run on the server's own provider key. A caller on one of
+// these tiers who supplies no key of their own falls back to it (main.go:
+// extractBYOK), and the spend lands on the operator's account rather than the
+// caller's — which is why the model is pinned below.
 const (
-	freeTier         = "free"
+	freeTier  = "free"
+	trialTier = "trial"
+)
+
+// The one provider/model pair the server's key is allowed to run. The pair is
+// hardcoded here on purpose: model_pricing.min_tier exists in the database but
+// is not consulted by this service, so the gate must not depend on a database
+// round trip in the request path.
+const (
 	freeTierProvider = "deepseek"
 	freeTierModel    = "deepseek-chat"
 )
@@ -50,8 +58,22 @@ func resolveModel(provider, model string) string {
 	return ""
 }
 
+// runsCheapModel reports whether the resolved request is the one pinned pair.
+func runsCheapModel(b byok) bool {
+	return b.provider == freeTierProvider && resolveModel(b.provider, b.model) == freeTierModel
+}
+
 // tierAllowsModel reports whether a caller on the given tier may run the given
 // request.
+//
+// Two distinct reasons to refuse, deliberately kept separate:
+//
+//   - free: pinned to one model whoever pays. Free callers are always BYOK
+//     (extractBYOK never hands them the server key), so this is a plan limit,
+//     not a cost control.
+//   - any tier on the server's key: pinned because the operator pays. A trial
+//     caller who supplies their OWN key is spending their own money and is
+//     therefore NOT restricted — same freedom pro and max have.
 //
 // An absent or empty tier ALLOWS. That is the local development case: `go run .`
 // has no Caddy in front of it, so nothing sets X-Pubvera-Tier and every request
@@ -59,18 +81,32 @@ func resolveModel(provider, model string) string {
 // entirely on Caddy setting the header on /api/* (forward_auth +
 // `copy_headers X-Pubvera-User X-Pubvera-Tier`); if that copy is ever dropped,
 // the gate silently stops gating.
-//
-// Any tier other than "free" — pro, max, owner — is unaffected.
 func tierAllowsModel(tier string, b byok, endpoint string) bool {
-	if strings.TrimSpace(tier) != freeTier {
-		return true
-	}
 	// No provider call means no cost and no model to refuse. Refusing here
-	// would lock free callers out of endpoints that never spend anything.
+	// would lock callers out of endpoints that never spend anything.
 	if !llmWillRun(b, endpoint) {
 		return true
 	}
-	return b.provider == freeTierProvider && resolveModel(b.provider, b.model) == freeTierModel
+	if b.serverKey {
+		return runsCheapModel(b)
+	}
+	if strings.TrimSpace(tier) != freeTier {
+		return true
+	}
+	return runsCheapModel(b)
+}
+
+// tierRefusalMessage explains the refusal in the terms that apply to this
+// caller. The two cases are not interchangeable: telling a trial user to
+// "upgrade to Pro" would be wrong when all they need to do is paste their own
+// key, and telling a free user to paste a key would hide the plan limit.
+func tierRefusalMessage(b byok) string {
+	if b.serverKey {
+		return "The included trial key only runs " + freeTierModel +
+			". Enter your own API key to use other models."
+	}
+	return "The free plan can only use " + freeTierModel +
+		". Upgrade to Pro to use other models."
 }
 
 // enforceTierGate applies tierAllowsModel to an incoming request. It returns
@@ -88,7 +124,7 @@ func enforceTierGate(w http.ResponseWriter, r *http.Request, b byok, endpoint st
 	w.WriteHeader(http.StatusForbidden)
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":   "model_locked",
-		"message": "The free plan can only use deepseek-chat. Upgrade to Pro to use other models.",
+		"message": tierRefusalMessage(b),
 	})
 	return false
 }

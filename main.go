@@ -2,22 +2,28 @@
 // scientific-consensus CLI. Each /api endpoint runs the compiled CLI (always
 // keyless/heuristic — the CLI never uses an LLM) for one cold key at a time:
 // a cache hit skips the run (cache.go) and concurrent callers of the same key
-// share one (singleflight.go). Then, when the
-// caller supplied a BYOK (bring-your-own-key) key, makes ONE in-process
-// chat-completions call (providers.go) to synthesize the CLI output into a
-// structured verdict. Each caller uses their own LLM key; the server never
-// holds a key of its own.
+// share one (singleflight.go). Then, when a key is available for the request,
+// makes ONE in-process chat-completions call (providers.go) to synthesize the
+// CLI output into a structured verdict.
+//
+// Two key sources, never mixed:
+//   - BYOK: the caller's own key, from the X-LLM-Key header. This is the only
+//     source for free, pro and max, and remains available to everyone.
+//   - The server's own DEEPSEEK_API_KEY, handed ONLY to trial-tier callers who
+//     supplied no key of their own. The operator pays for those calls, so
+//     tier.go pins them to one model.
 //
 // SECURITY MODEL (enforced below and in providers.go, do not weaken):
-//   - The BYOK key arrives in the X-LLM-Key request header and lives in memory
-//     only for the duration of one request and one outbound HTTPS call.
-//   - The key is NEVER logged, printed, persisted, written to the server's own
-//     process environment, or passed to the child CLI. buildChildEnv() strips
-//     every known provider key out of os.Environ(), so a key set in the
-//     server's own environment can never leak into the child either.
+//   - A key lives in memory only for the duration of one request and one
+//     outbound HTTPS call.
+//   - The key is NEVER logged, printed, persisted, or passed to the child CLI.
+//     buildChildEnv() strips every known provider key out of os.Environ() —
+//     INCLUDING the server's own DEEPSEEK_API_KEY, which is why that variable
+//     must stay listed in allProviderEnvVars.
 //   - Any CLI stderr or LLM provider diagnostic surfaced to the client passes
 //     through redact()/sanitizeLLMError(), which remove the key substring so a
-//     key echoed in an error can never escape.
+//     key echoed in an error can never escape. redact() is given b.key, so a
+//     server key is redacted on exactly the same path as a caller's key.
 package main
 
 import (
@@ -54,16 +60,28 @@ func cliBinaryPath() string {
 	return filepath.Join("bin", name)
 }
 
+// serverKeyEnvVar holds the operator's own DeepSeek key. It is the ONE key this
+// process may spend on a caller's behalf, and only for the trial tier. Empty or
+// unset simply means the fallback does not exist — every caller is then BYOK,
+// which is the pre-trial behaviour.
+const serverKeyEnvVar = "DEEPSEEK_API_KEY"
+
 // allProviderEnvVars is every provider key env var a CLI might conceivably
 // read. buildChildEnv strips ALL of them from the inherited environment so the
 // child never sees any provider key — the child is always keyless; LLM calls
 // happen in-process (providers.go).
+//
+// serverKeyEnvVar is on this list deliberately. It is the one variable this
+// process is EXPECTED to have set, which makes it the most likely to leak into
+// a child; being present in the server's own environment is precisely why it
+// must be stripped from the child's.
 var allProviderEnvVars = []string{
 	"ANTHROPIC_API_KEY",
 	"OPENAI_API_KEY",
 	"GEMINI_API_KEY",
 	"GROQ_API_KEY",
 	"MISTRAL_API_KEY",
+	serverKeyEnvVar,
 }
 
 // consensusResponse wraps the CLI's raw JSON verbatim. stance_source is
@@ -200,7 +218,11 @@ func main() {
 	cacheStore = newRedisCacheFromEnv()
 	cacheStore.probeAsync()
 
-	log.Printf("corpova listening on %s (CLI: %s)", addr, cliBinaryPath())
+	// Presence only — never the value, never a prefix, never a length that could
+	// narrow a guess. An operator needs to know whether the trial fallback is
+	// armed; nobody reading a log needs anything else about it.
+	log.Printf("corpova listening on %s (CLI: %s, trial key: %v)",
+		addr, cliBinaryPath(), serverProviderKey() != "")
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
 	}
@@ -283,21 +305,39 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// byok holds the per-request BYOK decision: the validated provider name, the
+// byok holds the per-request key decision: the validated provider name, the
 // key, and the (validated, possibly empty) model override. A zero byok means
 // keyless/heuristic.
 type byok struct {
 	provider string
 	key      string
 	model    string
+	// serverKey is true when key came from the server's own credentials rather
+	// than from the caller. The operator pays for those calls, so tier.go pins
+	// them to one model regardless of tier. It is never set for a key that
+	// arrived in a request header.
+	serverKey bool
+}
+
+// serverProviderKey returns the operator's own provider key, or "" when none is
+// configured. Read per call rather than cached at startup so that restarting
+// with the variable set is enough to arm the fallback — there is no second
+// place to keep it in sync.
+func serverProviderKey() string {
+	return strings.TrimSpace(os.Getenv(serverKeyEnvVar))
 }
 
 // extractBYOK reads the X-LLM-Key header, resolves the provider (from the
 // bodyProvider argument, falling back to the X-LLM-Provider header), and
 // validates the optional model override. It returns the byok decision and true
 // on success; on a client error it writes the response and returns false so
-// the caller stops. When no key is supplied it succeeds with a heuristic
-// (keyless) decision.
+// the caller stops.
+//
+// When no key is supplied there are two outcomes. A trial-tier caller falls
+// back to the server's own key (the point of the trial: no key to paste). Every
+// other tier succeeds with a heuristic (keyless) decision exactly as before —
+// free callers in particular are never handed the server's key, so a free
+// signup cannot spend the operator's money.
 func extractBYOK(w http.ResponseWriter, r *http.Request, bodyProvider, bodyModel string) (byok, bool) {
 	// The model override is validated even on keyless requests so a malformed
 	// value fails the same way regardless of key presence. Its value is never
@@ -311,6 +351,22 @@ func extractBYOK(w http.ResponseWriter, r *http.Request, bodyProvider, bodyModel
 	// accidentally log).
 	key := strings.TrimSpace(r.Header.Get("X-LLM-Key"))
 	if key == "" {
+		// The tier comes from Caddy's forward_auth (copy_headers
+		// X-Pubvera-User X-Pubvera-Tier). Absent locally, which is why the
+		// comparison is exact: `go run .` must not hand out the server key.
+		if strings.TrimSpace(r.Header.Get("X-Pubvera-Tier")) == trialTier {
+			if sk := serverProviderKey(); sk != "" {
+				// The model override is carried through so the gate sees what
+				// the caller actually asked for and can refuse it by name,
+				// rather than silently answering with a different model.
+				return byok{
+					provider:  freeTierProvider,
+					key:       sk,
+					model:     model,
+					serverKey: true,
+				}, true
+			}
+		}
 		return byok{}, true
 	}
 	provider := strings.ToLower(strings.TrimSpace(bodyProvider))
@@ -347,7 +403,7 @@ var cliPacingArgs = []string{"--rate-limit", "0.15", "--timeout", "100s"}
 
 // runCLIJSON runs the CLI with the given argv (subcommand + positional args +
 // flags already assembled by the caller) in an always-keyless child, then —
-// when a BYOK key was supplied — performs the in-process LLM synthesis over
+// when a key was available — performs the in-process LLM synthesis over
 // the CLI's JSON output and merges it into the response. An LLM failure never
 // fails the request: the heuristic result is returned with a redacted
 // llm_error. It centralizes the exec, timeouts, key-redaction, and
@@ -366,7 +422,7 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 
 	// The cache covers the CLI leg ONLY: the child CLI is always keyless, so its
 	// payload (OpenAlex search + heuristic scoring) is identical for every caller
-	// and safe to share. The BYOK synthesis below is per-caller and is never
+	// and safe to share. The LLM synthesis below is per-caller and is never
 	// cached — it still runs on every request, hit or miss.
 	var raw []byte
 	if cacheKey != "" {
@@ -780,7 +836,7 @@ func handleCompare(w http.ResponseWriter, r *http.Request) {
 
 // buildChildEnv returns the environment for the child CLI process: the
 // server's own environment with EVERY provider key removed. The child is
-// always keyless — BYOK keys are used only for the in-process LLM call and
+// always keyless — keys are used only for the in-process LLM call and
 // must never reach a subprocess.
 func buildChildEnv() []string {
 	strip := make(map[string]struct{}, len(allProviderEnvVars))
