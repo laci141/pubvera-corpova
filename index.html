@@ -2200,11 +2200,25 @@
         if (String(d.reason || '') === 'app_locked') {
           return `<div class="result-card"><h3>Not included in your plan</h3><p>Corpova is not part of your current plan. Upgrading your plan unlocks it.</p></div>`;
         }
-        let msg = 'You have used up the analyses included in your plan for this period.';
+        // check_budget writes the wording next to the rule that produced it,
+        // and pubvera-auth forwards it as message. Using it matters because the
+        // refusals are not all the same shape: lifetime_exhausted and
+        // daily_limit are counts, budget_exhausted and daily_budget_exhausted
+        // are money. The trial tier has no count limit at all, so telling one
+        // of its users they ran out of analyses names a limit that does not
+        // exist — the actual one was a daily credit of a few cents.
+        //
+        // The generic sentence stays as the fallback for a refusal that
+        // arrives without a message, and the heading follows the same split so
+        // it cannot contradict the body.
+        const dbMsg = String(d.message || '').trim();
+        const money = /budget|credit/i.test(String(d.reason || '') + ' ' + dbMsg);
+        let msg = dbMsg || 'You have used up the analyses included in your plan for this period.';
         const resets = resetsAtText(d.resets_at);
         if (resets) msg += ` Your quota resets on ${resets}.`;
         msg += ' Upgrading your plan raises the limit.';
-        return `<div class="result-card"><h3>Analysis limit reached</h3><p>${esc(msg)}</p></div>`;
+        const head = money ? 'AI credit used up' : 'Analysis limit reached';
+        return `<div class="result-card"><h3>${esc(head)}</h3><p>${esc(msg)}</p></div>`;
       }
       if (status === 503) {
         // The quota service could not be reached. The request was not rejected
