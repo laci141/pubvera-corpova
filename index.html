@@ -2581,7 +2581,26 @@
           });
           html += '</table>';
         }
-        html += `<p style="margin-top:1rem;"><strong>Apex Design:</strong> ${esc(result.apex_design)} &nbsp;·&nbsp; <strong>Studies:</strong> ${num(result.study_count)}</p></div>`;
+        // classified_by_pubtype is how many works carried a publication type
+        // from OpenAlex; the rest were placed by title heuristics or left
+        // unclassified. It does not grow with the result set — the same 34
+        // works are typed whether 55 or 100 are retrieved — so a larger limit
+        // dilutes the pyramid rather than sharpening it, and the percentages
+        // shift for a reason that has nothing to do with the literature. The
+        // figure was in the response and not on screen, which left that shift
+        // unexplained.
+        const typed = Number(result.classified_by_pubtype);
+        const total = Number(result.study_count);
+        let typedNote = '';
+        if (Number.isFinite(typed) && total > 0) {
+          const pctTyped = Math.round(100 * typed / total);
+          typedNote = ` &nbsp;·&nbsp; <strong>Typed by publisher:</strong> ${num(typed)} of ${num(total)} (${pctTyped}%)`;
+        }
+        html += `<p style="margin-top:1rem;"><strong>Apex Design:</strong> ${esc(result.apex_design)} &nbsp;·&nbsp; <strong>Studies:</strong> ${num(result.study_count)}${typedNote}</p>`;
+        if (typedNote) {
+          html += `<p style="margin-top:0.5rem;font-size:0.85rem;opacity:0.75;">Works without a publisher-supplied type are placed by title heuristics or counted as unclassified. Raising the study limit adds mostly untyped works, so the percentages above move with the limit as well as with the evidence.</p>`;
+        }
+        html += `</div>`;
         return html;
       }
 
