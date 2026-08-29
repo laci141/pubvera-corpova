@@ -1858,9 +1858,16 @@
         const doi = normDoi(r.doi || r.DOI);
         const year = Number(r.year || r.publication_year || 0);
         const journal = bibEsc(r.journal || r.source || r.venue || '');
-        const authors = Array.isArray(r.authors)
-          ? r.authors.map(a => bibEsc(typeof a === 'string' ? a : (a && (a.name || a.author_name) || ''))).filter(Boolean).join(' and ')
-          : bibEsc(r.authors || r.author || '');
+        // BibTeX separates authors with " and ". A semicolon list is one name to
+        // a reference manager, so seven authors import as one person with an
+        // unreadable surname. The rows carry authors as a "; "-joined string
+        // because that is what a CSV cell needs — author names contain commas —
+        // so the string has to be split back apart here rather than passed
+        // through. The array branch stays for callers that still hand one over.
+        const rawAuthors = Array.isArray(r.authors)
+          ? r.authors.map(a => typeof a === 'string' ? a : (a && (a.name || a.author_name) || ''))
+          : String(r.authors || r.author || '').split(';');
+        const authors = rawAuthors.map(a => bibEsc(String(a).trim())).filter(Boolean).join(' and ');
         // For a PRISMA excluded-studies list the reason IS the payload: without it
         // the import is just a pile of papers with no record of why they were set
         // aside. Labelled so it cannot be read as part of the provenance sentence.
