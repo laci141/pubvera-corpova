@@ -28,6 +28,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -547,6 +548,23 @@ func parseSynthesis(text string) (*llmSynthesis, error) {
 			continue
 		}
 		r := strings.TrimSpace(e.Reason)
+		// A reason that says the study was kept is not an exclusion. The prompt
+		// already forbids this ("a study you cite as evidence must never appear
+		// there"), and the model still does it: on a statins comparison it filed
+		// the West of Scotland trial — which its own key_evidence quotes for a
+		// 31% risk reduction — with the reason "This is a key RCT for statin
+		// claim, kept." The UI takes excluded_studies at its word and pulls the
+		// work out of the supporting column, so the strongest evidence for the
+		// claim disappeared from the screen while remaining in the summary above
+		// it.
+		//
+		// Dropping the entry restores the study rather than removing it: it stays
+		// in the columns, which is what the reason itself asked for. An
+		// instruction the model ignores needs an answer that does not depend on
+		// the model following it.
+		if selfContradictingExclusion(r) {
+			continue
+		}
 		if len(t) > 300 {
 			t = t[:300]
 		}
@@ -560,6 +578,23 @@ func parseSynthesis(text string) (*llmSynthesis, error) {
 	}
 	syn.ExcludedStudies = cleaned
 	return &syn, nil
+}
+
+// selfContradictingExclusion reports whether an exclusion reason states that the
+// study was kept. Matching is on the reason text because that is where the model
+// contradicts itself; the alternative — cross-checking every excluded title
+// against reasoning and key_evidence — depends on the model spelling the title
+// the same way twice, which it does not.
+//
+// The vocabulary is deliberately narrow. Measured against the eleven reasons
+// from the statins/fasting comparison that produced this bug, it flags the five
+// that say kept and none of the six genuine exclusions, which use excluded,
+// off-topic, animal model, or different substance. A wider pattern would start
+// catching "not used", which is what a real exclusion says.
+var keptAnyway = regexp.MustCompile(`(?i)\b(kept|keeping|retained|still used)\b`)
+
+func selfContradictingExclusion(reason string) bool {
+	return keptAnyway.MatchString(reason)
 }
 
 // sanitizeLLMError makes an upstream diagnostic safe for clients and logs:
