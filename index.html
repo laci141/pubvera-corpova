@@ -2032,7 +2032,18 @@
     // column the study was rendered in; claim is set on compare exports only.
     function studyRow(w, group, claim) {
       const row = {
-        title: cleanTitle(w.title), year: w.year || '',
+        title: cleanTitle(w.title),
+        // authors arrives from the CLI as a string array. Joined with "; "
+        // rather than ", " because author names themselves contain commas
+        // ("Smith, A."), and a comma-joined cell would split wrongly the
+        // moment anyone opens the CSV in a locale that treats ; as the
+        // delimiter. Non-string entries are tolerated: older CLI builds and
+        // some upstream sources return objects with a name field.
+        authors: Array.isArray(w.authors)
+          ? w.authors.map(a => typeof a === 'string' ? a : (a && (a.name || a.author_name) || '')).filter(Boolean).join('; ')
+          : (w.authors || ''),
+        journal: w.journal || w.source || w.venue || '',
+        year: w.year || '',
         citations: w.cited_by_count || 0,
         design: w.design || '', stance: w.stance || '',
         stance_confidence: w.stance_confidence != null ? w.stance_confidence : '',
