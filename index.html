@@ -2564,14 +2564,20 @@
 
       if (endpoint === 'evidence') {
         const pyramidRows = (Array.isArray(result.pyramid) ? result.pyramid : [])
-          .map(p => ({ design: p.design || '', count: p.count || 0, pct: p.pct || 0 }));
+          // example is the one study title the CLI names for each level. It is
+          // the only work-level detail the pyramid response carries, and it was
+          // being dropped here — so the exports listed counts with nothing to
+          // look up. Empty string rather than undefined: a level with a zero
+          // count has no example, and a missing key would shift the CSV header.
+          .map(p => ({ design: p.design || '', count: p.count || 0, pct: p.pct || 0,
+                       example: p.example || '' }));
         lastData.evidence_pyramid = { rows: pyramidRows, response: data };
         let html = `<div class="result-card" style="--color: #7c3aed;"><h3>Evidence Pyramid</h3>`;
         html += metaRow(pyramidRows.length + ' evidence levels', 'evidence_pyramid', 'corpova-evidence-pyramid.json');
         if (Array.isArray(result.pyramid)) {
-          html += '<table style="width:100%;font-size:0.9rem;"><tr><th>Design</th><th>Count</th><th>%</th></tr>';
+          html += '<table style="width:100%;font-size:0.9rem;"><tr><th>Design</th><th>Count</th><th>%</th><th>Example study</th></tr>';
           result.pyramid.forEach(p => {
-            html += `<tr><td>${esc(p.design)}</td><td>${num(p.count)}</td><td>${Number(p.pct)||0}%</td></tr>`;
+            html += `<tr><td>${esc(p.design)}</td><td>${num(p.count)}</td><td>${Number(p.pct)||0}%</td><td style="font-size:0.85rem;opacity:0.85;">${esc(p.example || '')}</td></tr>`;
           });
           html += '</table>';
         }
