@@ -479,5 +479,52 @@ const bib8 = withMetaRow('Consensus analysis · ' + CLAIM8 + ' · 1 / 1 row', ()
 check('S8 one-row title carries no row count', /\d+\s*\/\s*\d+\s*rows?/.test(bibTitle(bib8)), false);
 check('S8 one-row title', bibTitle(bib8), 'Consensus analysis: ' + CLAIM8);
 
+// -- scenario 9: boolean false exports as "No", absent stays empty ----------
+// A false is a measured answer ("not contested"); an empty cell says "no data".
+// Both formats must say the same thing, from one shared converter.
+check('S9 boolCell(true)', ctx(`boolCell(true)`), 'Yes');
+check('S9 boolCell(false)', ctx(`boolCell(false)`), 'No');
+check('S9 boolCell(undefined)', ctx(`boolCell(undefined)`), '');
+check('S9 boolCell(null)', ctx(`boolCell(null)`), '');
+
+// Two fixture rows for one export key: row 0 measured false, row 1 field absent.
+// The union of columns puts `contested` in both rows, so the absent case is a
+// real empty cell and not a missing column.
+ctx(`lastQuery = 'aspartame is contested';
+     lastData.controversies_summary = { rows: [
+       { claim: 'measured', contested: false },
+       { claim: 'absent' }
+     ], response: {} };`);
+const csvCell = (text, row, col) => {
+  // sep= line, provenance line, column header, then data rows.
+  const lines = text.replace(/^﻿/, '').split('\r\n');
+  const cols = lines[2].split(',');
+  return lines[3 + row].split(',')[cols.indexOf(col)];
+};
+ctx(`downloadCSV('controversies_summary','b.csv'); downloadXLSX('controversies_summary','b.xlsx');`);
+const [csv9, xlsx9] = downloads.slice(-2);
+const aoa9 = xlsx9.wb.ws.__aoa;
+const xlsxCell = (row, col) => aoa9[2 + row][aoa9[1].indexOf(col)];
+
+check('S9 CSV false cell reads "No"', csvCell(csv9.text, 0, 'contested'), 'No');
+check('S9 CSV absent cell is empty', csvCell(csv9.text, 1, 'contested'), '');
+check('S9 XLSX false cell reads "No"', xlsxCell(0, 'contested'), 'No');
+check('S9 XLSX absent cell is empty', xlsxCell(1, 'contested'), '');
+
+// The assertion that ties the two copies together: same fixture row, same
+// string in both formats. A fix applied to only one site fails here.
+check('S9 both formats agree on false',
+  [csvCell(csv9.text, 0, 'contested'), xlsxCell(0, 'contested')].join('|'), 'No|No');
+check('S9 both formats agree on absent',
+  [csvCell(csv9.text, 1, 'contested'), xlsxCell(1, 'contested')].join('|'), '|');
+check('S9 true still reads "Yes" in both formats',
+  ctx(`(function () {
+        lastData.controversies_summary = { rows: [{ claim: 'c', contested: true }], response: {} };
+        downloadCSV('controversies_summary','t9.csv'); downloadXLSX('controversies_summary','t9.xlsx');
+        return true;
+      })()`) &&
+  [csvCell(downloads[downloads.length - 2].text, 0, 'contested'),
+   downloads[downloads.length - 1].wb.ws.__aoa[2][1]].join('|'), 'Yes|Yes');
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

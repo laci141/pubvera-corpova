@@ -1686,15 +1686,22 @@
       return parts.join(' · ');
     }
 
+    // Export cell value for a boolean-or-absent field. Booleans are emitted as
+    // text because Hungarian Excel localises TRUE / FALSE to IGAZ / HAMIS. false
+    // is a measured answer and must read "No" — an empty cell means "no data",
+    // which is a different claim. null and undefined stay empty.
+    function boolCell(v) {
+      if (v === true) return "Yes";
+      if (v === false) return "No";
+      return "";
+    }
+
     // CSV (RFC4180). Excel-safe: BOM + CRLF + explicit separator hint.
     function toCSV(rows, headerLine) {
       const cols = [];
       rows.forEach(r => Object.keys(r || {}).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
       const cell = v => {
-        // Booleans must be exported as text, otherwise Excel localises them
-        // (Hungarian Excel shows IGAZ / HAMIS instead of TRUE / FALSE).
-        if (v === null || v === undefined || v === false) return "";
-        if (v === true) return "Yes";
+        if (v === null || v === undefined || typeof v === "boolean") return boolCell(v);
         let s = (typeof v === "object") ? JSON.stringify(v) : String(v);
         if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
         return s;
@@ -1732,8 +1739,7 @@
       // Row 0: provenance caption (merged, grey italic); row 1: column header.
       const aoa = [[exportHeader(key, rows, v.scope)], cols].concat(rows.map(r => cols.map(c => {
         const v = r ? r[c] : "";
-        if (v === null || v === undefined || v === false) return "";
-        if (v === true) return "Yes";
+        if (v === null || v === undefined || typeof v === "boolean") return boolCell(v);
         return (typeof v === "object") ? JSON.stringify(v) : v;
       })));
       const ws = XLSX.utils.aoa_to_sheet(aoa);
