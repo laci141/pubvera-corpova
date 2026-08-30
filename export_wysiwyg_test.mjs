@@ -419,5 +419,65 @@ check('S7 excluded label plural',
         'consensus_excluded', 'x.json'); })()`)),
   '2 excluded studies with reasons');
 
+// -- scenario 8: the @misc BibTeX title names the analysis and the claim -----
+// The title used to be assembled from the label plus the *scraped* meta-row
+// text. Three summary rows already print the label in that text, so the label
+// appeared twice; and the row-count suffix was stripped by a regex ending in a
+// literal "rows", which a one-row view ("1 / 1 row") no longer matched.
+const bibTitle = text => (text.match(/title\s*=\s*\{([\s\S]*?)\},\n/) || [])[1];
+const CLAIM8 = 'artificial sweeteners cause weight gain';
+// A meta-row is present and says exactly what the page renders today: label,
+// claim, and the singular row badge. A correct title ignores all of it.
+const withMetaRow = (text, fn) => {
+  const prev = sandbox.document.querySelector;
+  sandbox.document.querySelector = sel => (/\.meta-row/.test(sel) ? { textContent: text } : null);
+  try { return fn(); } finally { sandbox.document.querySelector = prev; }
+};
+const analysisTitle = (key, rows) =>
+  bibTitle(ctx(`analysisBibTeX(${JSON.stringify(key)}, ${JSON.stringify(rows)}, new Set())`));
+
+ctx(`lastQuery = ${JSON.stringify(CLAIM8)};`);
+
+check('S8 consensus_verdict title',
+  withMetaRow('Consensus analysis · ' + CLAIM8 + ' · 3 / 3 rows',
+    () => analysisTitle('consensus_verdict', [{}, {}, {}])),
+  'Consensus analysis: ' + CLAIM8);
+check('S8 compare_summary title',
+  withMetaRow('Claim comparison · ' + CLAIM8 + ' · 3 / 3 rows',
+    () => analysisTitle('compare_summary', [{}, {}, {}])),
+  'Claim comparison: ' + CLAIM8);
+// The label must appear exactly once — asserted on the whole string, so a
+// duplicated label cannot hide inside a substring match.
+check('S8 controversies_summary title has no duplicated label',
+  withMetaRow('Controversy analysis · ' + CLAIM8 + ' · 3 / 3 rows',
+    () => analysisTitle('controversies_summary', [{}, {}, {}])),
+  'Controversy analysis: ' + CLAIM8);
+// These two never carried the label in their meta text: their titles used to
+// read "… : 5 evidence levels". They now name the claim, like the other three.
+check('S8 evidence_pyramid title',
+  withMetaRow('5 evidence levels · 5 / 5 rows',
+    () => analysisTitle('evidence_pyramid', [{}])),
+  'Evidence pyramid analysis: ' + CLAIM8);
+check('S8 gaps_findings title',
+  withMetaRow('2 findings · 2 / 2 rows',
+    () => analysisTitle('gaps_findings', [{}])),
+  'Evidence gap analysis: ' + CLAIM8);
+
+// No .meta-row in the DOM at all: the title must still carry the claim. The
+// DOM-scraping version silently dropped it here.
+check('S8 title needs no .meta-row in the DOM',
+  analysisTitle('controversies_summary', [{}]),
+  'Controversy analysis: ' + CLAIM8);
+
+// A one-row view: the badge reads " · 1 / 1 row" (singular), which the old
+// regex did not strip, so the count leaked into the citation title.
+const bib8 = withMetaRow('Consensus analysis · ' + CLAIM8 + ' · 1 / 1 row', () => {
+  ctx(`lastData.consensus_verdict = { rows: [{ claim: 'c', verdict: 'supported' }], response: { result: {} } };
+       downloadBibTeX('consensus_verdict','one-row.bib');`);
+  return downloads[downloads.length - 1].text;
+});
+check('S8 one-row title carries no row count', /\d+\s*\/\s*\d+\s*rows?/.test(bibTitle(bib8)), false);
+check('S8 one-row title', bibTitle(bib8), 'Consensus analysis: ' + CLAIM8);
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

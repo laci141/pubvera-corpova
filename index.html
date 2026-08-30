@@ -1953,16 +1953,16 @@
     // earlier one. Accepted trade-off (2026-07-26).
     function analysisBibTeX(key, rows, used) {
       const label = ANALYSIS_LABEL[key] || 'Evidence analysis';
-      let scope = '';
-      const metaEl = document.querySelector('.meta-row[data-key="' + key + '"] .meta');
-      if (metaEl) scope = metaEl.textContent.replace(/\s*·\s*\d+\s*\/\s*\d+\s*rows\s*$/, '').trim();
       const now = new Date();
       const y = now.getFullYear();
       const stamp = y + ('0' + (now.getMonth() + 1)).slice(-2) + ('0' + now.getDate()).slice(-2);
       const base = 'corpova_' + (ANALYSIS_SLUG[key] || asciiSlug(key, 24, 'analysis')) +
         '_' + asciiSlug(lastQuery, 28, 'untitled') +
         '_' + hash3(keyWords(lastQuery).join(' ')) + '_' + stamp;
-      const title = bibEsc(label + (scope ? ': ' + scope : ''));
+      // The claim comes from lastQuery, not from the rendered meta-row: three
+      // summary rows already print the label in that text, so scraping it back
+      // duplicated the label, and the row-count badge leaked into the title.
+      const title = bibEsc(label + (lastQuery ? ': ' + lastQuery : ''));
       return '@misc{' + uniqueKey(base, used) + ',\n' +
         '  title  = {' + title + '},\n' +
         '  author = {{Corpova}},\n' +
