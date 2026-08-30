@@ -1624,7 +1624,7 @@
         if (!count) return;
         const items = scopeItems(row);
         const shown = items.filter(el => el.style.display !== 'none').length;
-        count.textContent = ' · ' + shown + ' / ' + items.length + ' rows';
+        count.textContent = ' · ' + shown + ' / ' + plural(items.length, 'row');
       });
     }
 
@@ -1661,6 +1661,14 @@
       });
     }
 
+    // English plural for a count: 1 row, 2 rows, 0 rows (0 takes the plural in
+    // English). One definition so the screen badges, the export headers and the
+    // BibTeX note cannot diverge. Irregular nouns pass their plural explicitly
+    // ("study" -> "studies"); the default is the regular -s form.
+    function plural(n, word, pluralForm) {
+      return n + ' ' + (n === 1 ? word : (pluralForm !== undefined ? pluralForm : word + 's'));
+    }
+
     // Provenance line embedded in every exported file: app, analysis, query,
     // shown-vs-total counts, active filters, data source, export date.
     function exportHeader(key, rows, scope) {
@@ -1669,7 +1677,7 @@
       const parts = ['Corpova export'];
       if (ANALYSIS_LABEL[key]) parts.push(ANALYSIS_LABEL[key]);
       if (lastQuery) parts.push('query: "' + lastQuery + '"');
-      parts.push(total && total !== shown ? ('showing ' + shown + ' of ' + total + ' rows') : (shown + ' rows'));
+      parts.push(total && total !== shown ? ('showing ' + shown + ' of ' + plural(total, 'row')) : plural(shown, 'row'));
       const retrieved = corpusRetrieved(key);
       if (retrieved !== undefined) parts.push(retrieved + ' retrieved');
       if (scope) parts.push(scope);
@@ -1960,8 +1968,8 @@
         '  author = {{Corpova}},\n' +
         '  year   = {' + y + '},\n' +
         '  howpublished = {Corpova research analytics},\n' +
-        '  note   = {Evidence analysis of ' + (rows ? rows.length : 0) +
-          ' records; underlying publication metadata from OpenAlex (CC0)},\n' +
+        '  note   = {Evidence analysis of ' + plural(rows ? rows.length : 0, 'record') +
+          '; underlying publication metadata from OpenAlex (CC0)},\n' +
         '  url    = {' + window.location.origin + '/}\n' +
         '}\n';
     }
@@ -2306,7 +2314,7 @@
         const n = s.excluded_studies.length;
         excluded = `
           <div class="excluded-block">
-            <div class="excluded-head">🚫 ${n} ${n === 1 ? 'study' : 'studies'} excluded by the AI filter — see the Excluded section below</div>
+            <div class="excluded-head">🚫 ${plural(n, 'study', 'studies')} excluded by the AI filter — see the Excluded section below</div>
           </div>`;
       }
       html += `
@@ -2465,7 +2473,7 @@
       const works = Array.isArray(all) ? all : [];
       lastData[key] = works.map(w => studyRow(w, 'analyzed'));
       if (!works.length) return '';
-      const body = metaRow(works.length + ' analyzed ' + (works.length === 1 ? 'study' : 'studies') +
+      const body = metaRow(plural(works.length, 'analyzed study', 'analyzed studies') +
           ' · the full list the score was computed from', key, filename) +
         works.map(w => renderStudyCard(w, null)).join('');
       return `
@@ -2486,7 +2494,7 @@
       lastData[key] = excludedRows(items, unmatched);
       const total = items.length + unmatched.length;
       if (!total) return '';
-      let body = metaRow(total + ' excluded ' + (total === 1 ? 'study' : 'studies') + ' with reasons', key, filename);
+      let body = metaRow(plural(total, 'excluded study', 'excluded studies') + ' with reasons', key, filename);
       const labels = [...new Set(items.map(i => i.claimLabel).filter(Boolean))];
       if (labels.length) {
         for (const label of labels) {
@@ -2613,7 +2621,7 @@
                ${num(result.supporting)} / ${num(result.refuting)} / ${num(result.mixed)} / ${num(result.inconclusive)}</p>
             <p><strong>Method:</strong> ${esc(result.stance_method)} &nbsp;·&nbsp; <strong>Requested:</strong> ${esc(stanceSource)}</p>
             ${heuristicScoreNote()}
-            ${metaRow(studies.length + ' studies shown', 'consensus_studies', 'corpova-consensus-studies.json')}
+            ${metaRow(plural(studies.length, 'study', 'studies') + ' shown', 'consensus_studies', 'corpova-consensus-studies.json')}
             ${groups}
           </div>${renderAllStudiesSection(result.all_studies, 'consensus_all', 'corpova-consensus-all-studies.json')}${renderExcludedSection(sink, 'consensus_excluded', 'corpova-consensus-excluded.json')}`;
       }
@@ -2629,7 +2637,7 @@
                        example: p.example || '' }));
         lastData.evidence_pyramid = { rows: pyramidRows, response: data };
         let html = `<div class="result-card" style="--color: #7c3aed;"><h3>Evidence Pyramid</h3>`;
-        html += metaRow(pyramidRows.length + ' evidence levels', 'evidence_pyramid', 'corpova-evidence-pyramid.json');
+        html += metaRow(plural(pyramidRows.length, 'evidence level'), 'evidence_pyramid', 'corpova-evidence-pyramid.json');
         if (Array.isArray(result.pyramid)) {
           html += '<table style="width:100%;font-size:0.9rem;"><tr><th>Design</th><th>Count</th><th>%</th><th>Example study</th></tr>';
           result.pyramid.forEach(p => {
@@ -2679,7 +2687,7 @@
                <strong>Studies:</strong> ${num(x.study_count)}</p>
             <p><strong>Apex Design:</strong> ${esc(x.apex_design)} &nbsp;·&nbsp; <strong>Method:</strong> ${esc(x.stance_method)}</p>
             ${heuristicScoreNote()}
-            ${metaRow(rows.length + ' studies shown · export covers both claims', 'compare_studies', 'corpova-compare-studies.json')}
+            ${metaRow(plural(rows.length, 'study', 'studies') + ' shown · export covers both claims', 'compare_studies', 'corpova-compare-studies.json')}
             ${groups}
           </div>`;
         };
@@ -2712,7 +2720,7 @@
           rows: findings.map(f => ({ kind: f.kind || 'gap', detail: f.detail || '' })),
           response: data
         };
-        html += metaRow(findings.length + (findings.length === 1 ? ' finding' : ' findings'), 'gaps_findings', 'corpova-gaps.json');
+        html += metaRow(plural(findings.length, 'finding'), 'gaps_findings', 'corpova-gaps.json');
         if (findings.length) {
           html += '<ul>';
           findings.forEach(f => {
@@ -2745,7 +2753,7 @@
         html += `<p><strong>Controversy score:</strong> ${esc(result.controversy_score)} &nbsp;·&nbsp; <strong>Contested:</strong> ${result.contested ? 'yes' : 'no'} &nbsp;·&nbsp; <strong>Studies:</strong> ${num(result.study_count)}</p>`;
         html += `<p><strong>Supporting / Refuting / Mixed:</strong> ${num(result.supporting)} / ${num(result.refuting)} / ${num(result.mixed)}</p>`;
         html += heuristicScoreNote();
-        html += metaRow(studies.length + ' studies shown', 'controversies_studies', 'corpova-controversies-studies.json');
+        html += metaRow(plural(studies.length, 'study', 'studies') + ' shown', 'controversies_studies', 'corpova-controversies-studies.json');
         html += groups;
         return html + '</div>' + renderExcludedSection(sink, 'controversies_excluded', 'corpova-controversies-excluded.json');
       }

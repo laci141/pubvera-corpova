@@ -299,5 +299,125 @@ ctx(`downloadJSON('compare_studies','cs.json');`);
 const j6b = JSON.parse(downloads[downloads.length - 1].text);
 check('S6B corpus omitted when unknown', 'corpus' in j6b.export, false);
 
+// -- scenario 7: singular/plural agreement --------------------------------
+// The helper itself.
+check('S7 plural(1,"row")', ctx(`plural(1, 'row')`), '1 row');
+check('S7 plural(0,"row")', ctx(`plural(0, 'row')`), '0 rows');
+check('S7 plural(2,"record")', ctx(`plural(2, 'record')`), '2 records');
+check('S7 plural irregular', [ctx(`plural(1, 'study', 'studies')`), ctx(`plural(3, 'study', 'studies')`)],
+  ['1 study', '3 studies']);
+
+// Call site A -- the screen badge (updateQcounts).
+const root7 = new El('div');
+const card7 = new El('div', ['result-card']);
+const mr7 = metaRowEl('consensus_studies');
+card7.add(mr7, new El('div', ['study-card'], { text: 'only study' }));
+root7.add(card7); renumber(root7);
+sandbox.__root7 = root7;
+ctx(`lastQuery = 'single row claim';
+     lastData.consensus_studies = [{ title: 'only study', year: 2020 }];
+     bindExportViews(__root7);`);
+check('S7 badge singular', mr7.querySelector('.qcount').textContent, ' · 1 / 1 row');
+
+// Call site B -- the export header, all rows shown.
+ctx(`downloadCSV('consensus_studies','one.csv');`);
+const hdr7 = downloads[downloads.length - 1].text.split(String.fromCharCode(13, 10))[1];
+check('S7 CSV header says "1 row"', /(^|[^0-9])1 row([^s]|$)/.test(hdr7), true);
+check('S7 CSV header does not say "1 rows"', hdr7.includes('1 rows'), false);
+
+// Call site B2 -- "showing N of M": the noun agrees with the TOTAL, not with
+// the shown count.
+check('S7 header noun follows total (1 of 3)',
+  ctx(`(function () {
+        lastData.consensus_studies = [{ title: 'a' }, { title: 'b' }, { title: 'c' }];
+        return exportHeader('consensus_studies', [{ title: 'a' }]);
+      })()`).includes('showing 1 of 3 rows'), true);
+check('S7 header singular when total is 1',
+  ctx(`(function () {
+        lastData.consensus_studies = [{ title: 'a' }];
+        return exportHeader('consensus_studies', []);
+      })()`).includes('showing 0 of 1 row'), true);
+
+// Call site C -- the BibTeX @misc note for a one-record analysis. A summary
+// export carries no paper titles, so downloadBibTeX takes analysisBibTeX.
+ctx(`lastData.consensus_verdict = { rows: [{ claim: 'c', verdict: 'supported' }], response: { result: {} } };
+     downloadBibTeX('consensus_verdict','one.bib');`);
+const bib7 = downloads[downloads.length - 1].text;
+check('S7 BibTeX note says "1 record"', bib7.includes('Evidence analysis of 1 record;'), true);
+check('S7 BibTeX note does not say "1 records"', bib7.includes('1 records'), false);
+
+// Call site D -- the metaRow label of every rendering branch. renderResult and
+// the two section renderers build plain strings, so they are called directly.
+const metaText = html => html.match(/<span class="meta">([^<]*)</)[1];
+const allMeta = html => (html.match(/<span class="meta">([^<]*)</g) || [])
+  .map(m => m.slice('<span class="meta">'.length, -1));
+const one = { title: 'a lone trial', year: 2021, stance: 'supporting' };
+const oneJSON = JSON.stringify(one);
+
+check('S7 consensus studies label singular',
+  allMeta(ctx(`renderResult('consensus', { claim: 'c', verdict: 'v', consensus_score: 1, confidence: 1,
+      evidence_strength: 's', apex_design: 'rct', study_count: 1, stance_method: 'm',
+      top_supporting: [${oneJSON}], top_refuting: [] }, 'heuristic', {})`))
+    .some(t => t.includes('1 study shown')), true);
+
+check('S7 controversies studies label singular',
+  allMeta(ctx(`renderResult('controversies', { controversy_score: 0.5, contested: true, study_count: 1,
+      supporting: 1, refuting: 0, mixed: 0,
+      supporting_side: [${oneJSON}], refuting_side: [] }, 'heuristic', {})`))
+    .some(t => t.includes('1 study shown')), true);
+
+check('S7 compare studies label singular',
+  allMeta(ctx(`renderResult('compare', { claim_a: { claim: 'A', verdict: 'v', consensus_score: 1,
+        confidence: 1, evidence_strength: 's', apex_design: 'rct', study_count: 1, stance_method: 'm',
+        top_supporting: [${oneJSON}], top_refuting: [] },
+      claim_b: { claim: 'B', verdict: 'v', consensus_score: 1, confidence: 1, evidence_strength: 's',
+        apex_design: 'rct', study_count: 0, stance_method: 'm', top_supporting: [], top_refuting: [] } },
+      'heuristic', {})`))
+    .some(t => t.includes('1 study shown · export covers both claims')), true);
+
+check('S7 evidence pyramid label singular',
+  allMeta(ctx(`renderResult('evidence', { pyramid: [{ design: 'rct', count: 1, pct: 100 }] }, 'heuristic', {})`))
+    .some(t => t === '1 evidence level'), true);
+check('S7 evidence pyramid label plural',
+  allMeta(ctx(`renderResult('evidence', { pyramid: [{ design: 'rct', count: 1, pct: 50 },
+      { design: 'cohort', count: 1, pct: 50 }] }, 'heuristic', {})`))
+    .some(t => t === '2 evidence levels'), true);
+
+check('S7 gaps findings label singular',
+  allMeta(ctx(`renderResult('gaps', { query: 'q', analyzed: 1, findings: [{ kind: 'gap', detail: 'd' }] }, 'heuristic', {})`))
+    .some(t => t === '1 finding'), true);
+check('S7 gaps findings label plural',
+  allMeta(ctx(`renderResult('gaps', { query: 'q', analyzed: 2,
+      findings: [{ kind: 'gap', detail: 'd' }, { kind: 'gap', detail: 'e' }] }, 'heuristic', {})`))
+    .some(t => t === '2 findings'), true);
+
+check('S7 all-analyzed-studies label singular',
+  metaText(ctx(`renderAllStudiesSection([${oneJSON}], 'consensus_all', 'x.json')`)),
+  '1 analyzed study · the full list the score was computed from');
+check('S7 all-analyzed-studies label plural',
+  metaText(ctx(`renderAllStudiesSection([${oneJSON}, ${oneJSON}], 'consensus_all', 'x.json')`)),
+  '2 analyzed studies · the full list the score was computed from');
+
+check('S7 AI-filter banner singular',
+  ctx(`renderSynthesis({ stance_source: 'llm', llm_synthesis: { stance: 'supports', model: 'm',
+      confidence: 0.9, excluded_studies: ['one off-topic paper'] } })`)
+    .includes('1 study excluded by the AI filter'), true);
+check('S7 AI-filter banner plural',
+  ctx(`renderSynthesis({ stance_source: 'llm', llm_synthesis: { stance: 'supports', model: 'm',
+      confidence: 0.9, excluded_studies: ['a', 'b'] } })`)
+    .includes('2 studies excluded by the AI filter'), true);
+
+check('S7 excluded label singular',
+  metaText(ctx(`(function () { aiExcluded = [];
+      return renderExcludedSection([{ work: ${oneJSON}, ex: { reason: 'off topic' } }],
+        'consensus_excluded', 'x.json'); })()`)),
+  '1 excluded study with reasons');
+check('S7 excluded label plural',
+  metaText(ctx(`(function () { aiExcluded = [];
+      return renderExcludedSection([{ work: ${oneJSON}, ex: { reason: 'off topic' } },
+        { work: ${oneJSON}, ex: { reason: 'off topic' } }],
+        'consensus_excluded', 'x.json'); })()`)),
+  '2 excluded studies with reasons');
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);
