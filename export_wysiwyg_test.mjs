@@ -526,5 +526,82 @@ check('S9 true still reads "Yes" in both formats',
   [csvCell(downloads[downloads.length - 2].text, 0, 'contested'),
    downloads[downloads.length - 1].wb.ws.__aoa[2][1]].join('|'), 'Yes|Yes');
 
+// -- scenario 10: the inconclusive count ------------------------------------
+// The CLI classifies every analyzed work into one of four stances. The web
+// layer used to read three, so StanceInconclusive works were counted nowhere:
+// a 28-study analysis rendered 2 / 8 / 0 and exported no fourth column, and
+// the 18 missing works were invisible in the UI and in every export format.
+const CONTRO28 = {
+  controversy_score: 0.4, contested: true, study_count: 28,
+  supporting: 2, refuting: 8, mixed: 0, inconclusive: 18,
+  supporting_side: [{ title: 'a supporting trial', year: 2019, stance: 'supporting' }],
+  refuting_side: [{ title: 'a refuting trial', year: 2020, stance: 'refuting' }],
+};
+// An older cached response, produced before the CLI grew the fourth field.
+const CONTRO_LEGACY = Object.assign({}, CONTRO28);
+delete CONTRO_LEGACY.inconclusive;
+
+// Returns null rather than throwing when the four-stance line is absent, so a
+// reverted UI line fails this check instead of aborting the whole run.
+const fourCounts = html => {
+  const m = html.match(/Supporting \/ Refuting \/ Mixed \/ Inconclusive:<\/strong>\s*([^<]*)</);
+  return m ? m[1].trim() : null;
+};
+const renderContro = result =>
+  ctx(`renderResult('controversies', ${JSON.stringify(result)}, 'heuristic', {})`);
+
+// -- the summary row ---------------------------------------------------------
+ctx(`lastQuery = 'aspartame causes cancer';`);
+const html10 = renderContro(CONTRO28);
+const row10 = ctx(`lastData.controversies_summary.rows[0]`);
+check('S10 summary row carries inconclusive', row10.inconclusive, 18);
+check('S10 four counts sum to studies_analyzed',
+  row10.supporting + row10.refuting + row10.mixed + row10.inconclusive,
+  row10.studies_analyzed);
+// The score's denominator is upstream's business — the web layer must not
+// touch it just because a fourth count arrived.
+check('S10 controversy_score untouched', row10.controversy_score, 0.4);
+check('S10 studies_analyzed still study_count', row10.studies_analyzed, 28);
+
+// -- the rendered UI line ----------------------------------------------------
+// This is the part a user actually reads, and the easiest to silently revert.
+check('S10 UI line labels four stances',
+  html10.includes('<strong>Supporting / Refuting / Mixed / Inconclusive:</strong>'), true);
+check('S10 UI line prints four numbers',
+  fourCounts(html10), '2 / 8 / 0 / 18');
+
+// -- the export --------------------------------------------------------------
+// Assert the COLUMN exists, not just a value: against a missing column a
+// value-only read returns undefined on both sides and passes vacuously.
+const csvCols = text => text.replace(/^﻿/, '').split('\r\n')[2].split(',');
+ctx(`downloadCSV('controversies_summary','c10.csv');`);
+const csv10 = downloads[downloads.length - 1].text;
+check('S10 CSV has an inconclusive column', csvCols(csv10).includes('inconclusive'), true);
+check('S10 CSV inconclusive cell is 18', csvCell(csv10, 0, 'inconclusive'), '18');
+
+// -- absent field (a pre-rebuild cached response) ----------------------------
+// The key is written unconditionally, so the column is still there; the value
+// is undefined, which toCSV/boolCell render as an EMPTY cell — "no data" —
+// rather than "0" (a measured claim we cannot make), NaN or "undefined".
+ctx(`lastQuery = 'aspartame causes cancer';`);
+const htmlLegacy = renderContro(CONTRO_LEGACY);
+const rowLegacy = ctx(`lastData.controversies_summary.rows[0]`);
+check('S10 legacy row keeps the key', 'inconclusive' in rowLegacy, true);
+check('S10 legacy row value is undefined', rowLegacy.inconclusive === undefined, true);
+ctx(`downloadCSV('controversies_summary','c10-legacy.csv'); downloadXLSX('controversies_summary','c10-legacy.xlsx');`);
+const [csvL, xlsxL] = downloads.slice(-2);
+check('S10 legacy CSV still has the column', csvCols(csvL.text).includes('inconclusive'), true);
+check('S10 legacy CSV cell is empty', csvCell(csvL.text, 0, 'inconclusive'), '');
+const aoaL = xlsxL.wb.ws.__aoa;
+check('S10 legacy XLSX cell is empty', aoaL[2][aoaL[1].indexOf('inconclusive')], '');
+check('S10 legacy export says neither NaN nor undefined',
+  /NaN|undefined/.test(csvL.text), false);
+// The UI, unlike the export, falls back to 0 — num() coerces, exactly as the
+// consensus branch has always done for the same field.
+check('S10 legacy UI line prints 0 for the missing count',
+  fourCounts(htmlLegacy), '2 / 8 / 0 / 0');
+check('S10 legacy UI line has no NaN/undefined', /NaN|undefined/.test(htmlLegacy), false);
+
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

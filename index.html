@@ -2741,7 +2741,8 @@
       }
 
       // controversies: CLI returns { controversy_score, contested, study_count,
-      //   supporting, refuting, mixed, supporting_side:[work], refuting_side:[work] }
+      //   supporting, refuting, mixed, inconclusive,
+      //   supporting_side:[work], refuting_side:[work] }
       if (endpoint === 'controversies') {
         const sink = [];
         const groups = renderStudyGroups(result.supporting_side, result.refuting_side, sink);
@@ -2751,13 +2752,14 @@
           rows: [{
             claim: lastQuery, controversy_score: result.controversy_score,
             contested: !!result.contested, studies_analyzed: result.study_count,
-            supporting: result.supporting, refuting: result.refuting, mixed: result.mixed
+            supporting: result.supporting, refuting: result.refuting, mixed: result.mixed,
+            inconclusive: result.inconclusive
           }],
           response: data
         };
         let html = `<div class="result-card" style="--color: #ef4444;"><h3>Controversies</h3>`;
         html += `<p><strong>Controversy score:</strong> ${esc(result.controversy_score)} &nbsp;·&nbsp; <strong>Contested:</strong> ${result.contested ? 'yes' : 'no'} &nbsp;·&nbsp; <strong>Studies:</strong> ${num(result.study_count)}</p>`;
-        html += `<p><strong>Supporting / Refuting / Mixed:</strong> ${num(result.supporting)} / ${num(result.refuting)} / ${num(result.mixed)}</p>`;
+        html += `<p><strong>Supporting / Refuting / Mixed / Inconclusive:</strong> ${num(result.supporting)} / ${num(result.refuting)} / ${num(result.mixed)} / ${num(result.inconclusive)}</p>`;
         html += heuristicScoreNote();
         html += metaRow(plural(studies.length, 'study', 'studies') + ' shown', 'controversies_studies', 'corpova-controversies-studies.json');
         html += groups;
