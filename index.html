@@ -1528,6 +1528,24 @@
     // Claim text of the most recent run — used in summary rows and BibTeX scope.
     let lastQuery = '';
 
+    // Which export key holds the API response for this key's run. Study-list and
+    // excluded-list keys store a bare array, so they read the retrieved count
+    // from the summary key filled by the same renderResult() pass.
+    const CORPUS_SOURCE = {
+      consensus_verdict:      'consensus_verdict',
+      consensus_studies:      'consensus_verdict',
+      consensus_all:          'consensus_verdict',
+      consensus_excluded:     'consensus_verdict',
+      evidence_pyramid:       'evidence_pyramid',
+      compare_summary:        'compare_summary',
+      compare_studies:        'compare_summary',
+      compare_excluded:       'compare_summary',
+      gaps_findings:          'gaps_findings',
+      controversies_summary:  'controversies_summary',
+      controversies_studies:  'controversies_summary',
+      controversies_excluded: 'controversies_summary'
+    };
+
     // Human-readable label per export key, used for @misc BibTeX citations of
     // analyses that have no per-paper rows to cite.
     const ANALYSIS_LABEL = {
@@ -1573,6 +1591,18 @@
         return { rows: Array.isArray(v.rows) ? v.rows : [], filters: filters, scope: filters.join(' · ') };
       }
       return { rows: rowsFromLastData(key) || [], filters: [], scope: '' }; // fallback: unfiltered module
+    }
+
+    // The retrieved corpus size for an export key, or undefined when unknown.
+    // Undefined means "not measured" and MUST be omitted from the output — a 0
+    // would assert that nothing was analysed, which is false.
+    function corpusRetrieved(key) {
+      const srcKey = CORPUS_SOURCE[key];
+      if (!srcKey) return undefined;
+      const src = lastData[srcKey];
+      if (!src || Array.isArray(src) || !src.response) return undefined;
+      const n = Number(src.response.result && src.response.result.study_count);
+      return Number.isFinite(n) && n > 0 ? n : undefined;
     }
 
     // The filterable elements a meta-row's quick filter governs. Shared by the
@@ -1640,6 +1670,8 @@
       if (ANALYSIS_LABEL[key]) parts.push(ANALYSIS_LABEL[key]);
       if (lastQuery) parts.push('query: "' + lastQuery + '"');
       parts.push(total && total !== shown ? ('showing ' + shown + ' of ' + total + ' rows') : (shown + ' rows'));
+      const retrieved = corpusRetrieved(key);
+      if (retrieved !== undefined) parts.push(retrieved + ' retrieved');
       if (scope) parts.push(scope);
       parts.push('source: OpenAlex (CC0)');
       parts.push(new Date().toISOString().slice(0, 10));
@@ -1961,6 +1993,9 @@
           filters: v.filters,
           rows_exported: v.rows.length,
           rows_total: raw.length,
+          ...(corpusRetrieved(key) !== undefined
+            ? { corpus: { retrieved: corpusRetrieved(key), displayed: v.rows.length } }
+            : {}),
           source: 'OpenAlex (CC0)',
           exported_at: new Date().toISOString()
         },

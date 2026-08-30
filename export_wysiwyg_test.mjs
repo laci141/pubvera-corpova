@@ -93,6 +93,7 @@ const sandbox = {
         return { s: { c: m[1].charCodeAt(0) - 65, r: +m[2] - 1 }, e: { c: m[3].charCodeAt(0) - 65, r: +m[4] - 1 } };
       },
       encode_cell: ({ r, c }) => colName(c) + (r + 1),
+      encode_range: ({ s, e }) => colName(s.c) + (s.r + 1) + ':' + colName(e.c) + (e.r + 1),
       book_new: () => ({}),
       book_append_sheet: (wb, ws) => { wb.ws = ws; },
     },
@@ -152,7 +153,9 @@ check('S1 JSON envelope counts', [j1.export.rows_exported, j1.export.rows_total]
 check('S1 JSON filters', j1.export.filters, ['filter: "magnesium"']);
 check('S1 CSV provenance line', csv1.text.split('\r\n')[1].includes('showing 4 of 10 rows'), true);
 check('S1 XLSX caption row', xlsx1.wb.ws.__aoa[0][0].startsWith('Corpova export'), true);
-check('S1 XLSX freeze below caption+header', xlsx1.wb.ws['!freeze'].ySplit, 2);
+// Freeze panes were removed from downloadXLSX (xlsx-js-style drops them); the
+// autofilter starting on the header row is the live contract.
+check('S1 XLSX autofilter starts at header row', xlsx1.wb.ws['!autofilter'].ref.split(':')[0], 'A2');
 check('S1 BibTeX provenance comment', bib1.text.startsWith('% Corpova export'), true);
 check('S1 JSON app/query', [j1.export.app, j1.export.query], ['Corpova', 'magnesium lowers blood pressure']);
 
@@ -265,6 +268,36 @@ check('S5 claims sharing a truncated slug get different keys',
 const accentedClaim = 'a szívinfarktus kockázata csökken';
 const accentedKeys = bibKeysFor(accentedClaim, 'consensus_verdict', summaryShapes.consensus_verdict(accentedClaim));
 check('S5 keys stay ASCII/BibTeX-safe', accentedKeys.filter(k => !/^[A-Za-z0-9_:.-]+$/.test(k)), []);
+
+// ── scenario 6: corpus block — retrieved vs displayed ────────────────────
+// Test A — the resolver itself.
+ctx(`lastData.controversies_summary = { rows: [{ claim: 'c' }], response: { result: { study_count: 50 } } };
+     lastData.controversies_studies = [{ title: 'a' }, { title: 'b' }, { title: 'c' }];`);
+check('S6A resolver reads sibling study_count', ctx(`corpusRetrieved('controversies_studies')`), 50);
+check('S6A resolver on the summary key itself', ctx(`corpusRetrieved('controversies_summary')`), 50);
+ctx(`lastData.gaps_findings = null;`);
+check('S6A missing sibling → undefined', ctx(`corpusRetrieved('gaps_findings') === undefined`), true);
+ctx(`lastData.compare_summary = [{ title: 'x' }];`);
+check('S6A array sibling → undefined', ctx(`corpusRetrieved('compare_studies') === undefined`), true);
+ctx(`lastData.consensus_verdict = { rows: [], response: { result: {} } };`);
+check('S6A no study_count → undefined', ctx(`corpusRetrieved('consensus_studies') === undefined`), true);
+check('S6A unmapped key → undefined', ctx(`corpusRetrieved('nope') === undefined`), true);
+
+// Test B — the call site. 50 retrieved, 3 rows rendered: a constant cannot pass.
+ctx(`downloadJSON('controversies_studies','c.json');`);
+const j6 = JSON.parse(downloads[downloads.length - 1].text);
+check('S6B JSON corpus block', j6.export.corpus, { retrieved: 50, displayed: 3 });
+check('S6B corpus.retrieved matches response study_count',
+  j6.export.corpus && j6.export.corpus.retrieved,
+  ctx(`lastData.controversies_summary.response.result.study_count`));
+check('S6B rows_exported/rows_total untouched', [j6.export.rows_exported, j6.export.rows_total], [3, 3]);
+ctx(`downloadCSV('controversies_studies','c.csv');`);
+check('S6B CSV header carries retrieved count',
+  downloads[downloads.length - 1].text.split(String.fromCharCode(13,10))[1].includes('50 retrieved'), true);
+// unknown count → block omitted entirely (never null/0/{})
+ctx(`downloadJSON('compare_studies','cs.json');`);
+const j6b = JSON.parse(downloads[downloads.length - 1].text);
+check('S6B corpus omitted when unknown', 'corpus' in j6b.export, false);
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);
