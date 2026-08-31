@@ -67,7 +67,7 @@ type providerSpec struct {
 var providers = map[string]providerSpec{
 	"anthropic":  {"https://api.anthropic.com/v1", "claude-haiku-4-5", styleAnthropic, false},
 	"openai":     {"https://api.openai.com/v1", "gpt-5-mini", styleOpenAI, false},
-	"gemini":     {"https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash", styleOpenAI, false},
+	"gemini":     {"https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.7-flash", styleOpenAI, false},
 	"groq":       {"https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", styleOpenAI, false},
 	"mistral":    {"https://api.mistral.ai/v1", "mistral-small-latest", styleOpenAI, false},
 	"deepseek":   {"https://api.deepseek.com", "deepseek-chat", styleOpenAI, false},
@@ -96,6 +96,28 @@ var providers = map[string]providerSpec{
 var deterministicProviders = map[string]bool{
 	"anthropic": true,
 	"deepseek":  true,
+}
+
+// llmFailureAdvice names what the user should do about a provider failure.
+// The raw provider text follows it and is what makes a bug report useful,
+// but on its own it never says whether to retry, switch model, or check a
+// key. Measured against the live Gemini API: 503 is transient and common,
+// and the correct advice there is simply to try again.
+//
+// An unrecognised status returns the empty string, leaving the message
+// exactly as it was before this function existed.
+func llmFailureAdvice(status int) string {
+	switch status {
+	case 401, 403:
+		return "Check your API key. "
+	case 404:
+		return "That model is not available — pick another from the list. "
+	case 429:
+		return "Rate limit reached — wait a moment and try again. "
+	case 503:
+		return "Provider overloaded — try again in a few minutes. "
+	}
+	return ""
 }
 
 // supportedProviders is the sorted name list used in error messages.
@@ -399,7 +421,13 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 	if err != nil {
 		// Transport errors can embed the URL but never the key (it travels in a
 		// header); sanitize anyway.
-		msg := "request failed: " + sanitizeLLMError(err.Error(), key)
+		// A deadline is not an HTTP status: it arrives here as a transport
+		// error. Detected with errors.Is, not by matching the error text.
+		lead := ""
+		if errors.Is(err, context.DeadlineExceeded) {
+			lead = "The model did not answer in time — try again, or pick another model. "
+		}
+		msg := lead + "request failed: " + sanitizeLLMError(err.Error(), key)
 		log.Printf("llm: fail provider=%s elapsed_ms=%d err=%s",
 			provider, time.Since(start).Milliseconds(), truncate(msg, 300))
 		return nil, errors.New(msg)
@@ -413,7 +441,8 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		return nil, errors.New(msg)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		msg := fmt.Sprintf("provider returned HTTP %d: %s", resp.StatusCode, sanitizeLLMError(string(respBody), key))
+		msg := llmFailureAdvice(resp.StatusCode) +
+			fmt.Sprintf("provider returned HTTP %d: %s", resp.StatusCode, sanitizeLLMError(string(respBody), key))
 		log.Printf("llm: fail provider=%s elapsed_ms=%d err=%s",
 			provider, time.Since(start).Milliseconds(), truncate(msg, 300))
 		return nil, errors.New(msg)
