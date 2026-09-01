@@ -2279,6 +2279,13 @@
         const resets = resetsAtText(d.resets_at);
         if (resets) msg += ` Your quota resets on ${resets}.`;
         msg += ' Upgrading your plan raises the limit.';
+        // A money refusal (daily AI credit / budget) has a second, FREE way
+        // out that costs the user nothing to try: BYOK is ungated on every
+        // tier, and an analysis paid with the caller's own key is not metered
+        // here at all. Offering only "upgrade" hid that. A count limit
+        // (Analysis limit reached) is NOT lifted by a personal key, so that
+        // branch stays exactly as it was.
+        if (money) msg += ' Or enter your own API key — analyses paid with your own key have no daily limit.';
         const head = money ? 'AI credit used up' : 'Analysis limit reached';
         return `<div class="result-card"><h3>${esc(head)}</h3><p>${esc(msg)}</p></div>`;
       }
@@ -2308,6 +2315,29 @@
     // still valid either way). When the model returned an excluded-studies list
     // (studies it judged off-topic or too weak to count), show it so the
     // filtering is transparent.
+    // serverKeyNote discloses that the answer was produced with the SERVER's
+    // included trial key rather than a key the user pasted. It matters because
+    // the fallback (main.go extractBYOK) rewrites the provider to deepseek: a
+    // trial user who picked "Moonshot Kimi" in the dropdown and left the key
+    // field empty was answered by deepseek-chat, and nothing on the page said
+    // so. The dropdown is deliberately NOT locked — the frontend cannot see
+    // X-Pubvera-Tier (it lives in a Caddy header), so a lock keyed on the empty
+    // key field would also fire for free users, who get no server key and must
+    // choose a provider.
+    //
+    // The model is read from the response, never hardcoded: the server is the
+    // only thing that knows which model actually ran. If it does not name one,
+    // the line is omitted entirely rather than guessed at — same rule as
+    // corpusRetrieved / boolCell, absent means not measured, and an unknown
+    // model must not be asserted as a known one.
+    function serverKeyNote(data) {
+      if (!data || data.server_key !== true) return '';
+      const model = (data.llm_synthesis && data.llm_synthesis.model) || '';
+      if (!model) return '';
+      return `<div class="quiet-note">Analysed with <b>${esc(model)}</b> using the included trial key.
+        Enter your own API key above to run Kimi, Gemini or Claude.</div>`;
+    }
+
     function renderSynthesis(data) {
       let html = '';
       if (data.llm_error) {
@@ -2331,6 +2361,7 @@
       }
       html += `
         <div class="result-card" style="--color: ${color}; border-left: 4px solid ${color};">
+          ${serverKeyNote(data)}
           <h3>🤖 LLM Synthesis <span style="font-weight:400;color:#888;font-size:0.8rem;">${esc(data.stance_source)} · ${esc(s.model)}</span></h3>
           <p style="margin: 0.5rem 0;">
             <span class="synthesis-badge" style="color:${color};">${esc(s.stance)}</span>

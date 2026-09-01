@@ -94,6 +94,16 @@ type consensusResponse struct {
 	StanceSource string        `json:"stance_source"`
 	LLMSynthesis *llmSynthesis `json:"llm_synthesis,omitempty"`
 	LLMError     string        `json:"llm_error,omitempty"`
+	// ServerKey reports that this answer was produced with the SERVER's own
+	// provider key (the trial fallback in extractBYOK), not with a key the
+	// caller supplied. It exists so the UI can name the model that actually
+	// ran: the fallback rewrites the provider to deepseek, so a trial caller
+	// who picked something else in the dropdown was answered by a different
+	// model than the one on screen. Set inside the LLMSynthesis block below,
+	// so it is true only when an LLM really ran — /api/gaps and /api/evidence
+	// call no provider at all and must not report a model they never used.
+	// omitempty keeps it off every BYOK response: absent, never false.
+	ServerKey bool `json:"server_key,omitempty"`
 	// Divergence reports that the keyless heuristic verdict and the LLM
 	// synthesis reached different conclusions, so the two blocks the UI shows
 	// cannot both be right. It is false whenever they agree and false whenever
@@ -487,6 +497,11 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 	var model string
 	var inTok, outTok int
 	if resp.LLMSynthesis != nil {
+		// Inside this block on purpose: b.serverKey says whose key WOULD have
+		// been used, this says an LLM actually used it. gaps and evidence never
+		// synthesize, so they leave the field absent rather than naming a model
+		// that never ran.
+		resp.ServerKey = b.serverKey
 		model = resp.LLMSynthesis.Model
 		inTok = resp.LLMSynthesis.InputTokens
 		outTok = resp.LLMSynthesis.OutputTokens

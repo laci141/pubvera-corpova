@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -296,5 +297,128 @@ func TestExtractBYOKOwnKeyWinsOnTrial(t *testing.T) {
 	}
 	if b.key != "sk-callers-own" {
 		t.Error("the caller's own key was not used")
+	}
+}
+
+// runEndpoint drives one real /api/<endpoint> handler through the hermetic
+// stack recordingHarness sets up (stub CLI, no cache) and returns the decoded
+// response. It exists because record_test.go's analyze covers /api/consensus
+// only, and the claim under test here is precisely that a non-synthesizing
+// endpoint behaves differently from a synthesizing one.
+func runEndpoint(t *testing.T, endpoint string, headers map[string]string) consensusResponse {
+	t.Helper()
+	body := `{"claim":"vitamin D reduces respiratory infections","limit":10}`
+	req := httptest.NewRequest(http.MethodPost, "/api/"+endpoint, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	rec := httptest.NewRecorder()
+	switch endpoint {
+	case "consensus":
+		handleConsensus(rec, req)
+	case "gaps":
+		handleGaps(rec, req)
+	case "controversies":
+		handleControversies(rec, req)
+	default:
+		t.Fatalf("runEndpoint does not know endpoint %q", endpoint)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s: status %d, body %s", endpoint, rec.Code, rec.Body.String())
+	}
+	var resp consensusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("%s: response is not valid JSON: %v\n%s", endpoint, err, rec.Body.String())
+	}
+	return resp
+}
+
+// TestServerKeyReportedOnlyWhenAModelRan pins the field the UI reads to name
+// the model on the result card.
+//
+// The defect it guards: a trial caller who leaves the key field empty is
+// silently switched to the server's deepseek key (extractBYOK), so the model
+// that answered is not the one the dropdown shows. server_key is what lets the
+// card say so. Two halves of the condition, and both are load-bearing:
+//
+//   - b.serverKey — a caller spending their OWN key was not switched to
+//     anything, so there is nothing to disclose.
+//   - an LLM actually ran — gaps and evidence never reach a provider, so
+//     reporting the server's key there would name a model that never ran.
+//
+// The value is read out of the JSON, not off the struct, because the UI reads
+// JSON: omitempty means false must arrive as an ABSENT key, and a test against
+// the struct field could not tell those apart.
+func TestServerKeyReportedOnlyWhenAModelRan(t *testing.T) {
+	const serverSecret = "sk-server-side-secret"
+
+	tests := []struct {
+		name     string
+		tier     string
+		ownKey   bool // the caller pasted their own key
+		endpoint string
+		want     bool
+	}{
+		// The live defect, 2026-09-01: trial, empty key field, consensus. The
+		// answer came from the server's deepseek-chat and the UI never said so.
+		{"trial on the server key synthesizes: disclosed", trialTier, false, "consensus", true},
+		// Same caller, same key, an endpoint that runs no LLM at all. There is
+		// no model to name, so the field must be absent.
+		{"trial on the server key, gaps runs no LLM: silent", trialTier, false, "gaps", false},
+		// Own key on trial: their money, their model, the dropdown told the
+		// truth. Nothing was substituted, so nothing to disclose.
+		{"trial with the caller's own key: silent", trialTier, true, "consensus", false},
+		// Pro is never handed the server key in the first place.
+		{"pro with its own key: silent", "pro", true, "consensus", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			recordingHarness(t)
+			// Both providers are stubbed: the server-key path is rewritten to
+			// deepseek by extractBYOK, the own-key path stays on openai.
+			stubProvider(t, freeTierProvider)
+			stubProvider(t, "openai")
+			t.Setenv(serverKeyEnvVar, serverSecret)
+
+			headers := map[string]string{"X-Pubvera-Tier": tc.tier}
+			if tc.ownKey {
+				headers["X-LLM-Key"] = "sk-callers-own"
+				headers["X-LLM-Provider"] = "openai"
+			}
+
+			resp := runEndpoint(t, tc.endpoint, headers)
+			if resp.ServerKey != tc.want {
+				t.Errorf("server_key = %v, want %v (stance_source %q, llm_error %q)",
+					resp.ServerKey, tc.want, resp.StanceSource, resp.LLMError)
+			}
+			// The card names llm_synthesis.model, so a true server_key with no
+			// model to read would render nothing — the disclosure would be lost.
+			if tc.want && (resp.LLMSynthesis == nil || resp.LLMSynthesis.Model == "") {
+				t.Error("server_key is true but the response names no model for the card to show")
+			}
+		})
+	}
+}
+
+// TestServerKeyIsAbsentNotFalse guards the wire shape omitempty buys: existing
+// BYOK clients must see no new key at all, rather than a new "server_key":false.
+func TestServerKeyIsAbsentNotFalse(t *testing.T) {
+	recordingHarness(t)
+	stubProvider(t, "openai")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/consensus",
+		strings.NewReader(`{"claim":"vitamin D reduces respiratory infections","limit":10}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-LLM-Key", "sk-callers-own")
+	req.Header.Set("X-LLM-Provider", "openai")
+	rec := httptest.NewRecorder()
+	handleConsensus(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "server_key") {
+		t.Errorf("a BYOK response carries a server_key key; it must be omitted entirely:\n%s", rec.Body.String())
 	}
 }
