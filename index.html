@@ -1344,7 +1344,7 @@
     const providerDefaults = {
       anthropic: 'claude-haiku-4-5',
       openai: 'gpt-5-mini',
-      gemini: 'gemini-3.7-flash',
+      gemini: 'gemini-3.5-flash',
       groq: 'llama-3.3-70b-versatile',
       mistral: 'mistral-small-latest',
       deepseek: 'deepseek-chat',
@@ -1369,11 +1369,22 @@
         { id: 'claude-haiku-4-5', note: 'faster, cheaper' },
         { id: 'claude-sonnet-4-6', note: 'more thorough, higher cost' }
       ],
+      // GEMINI ORDER AND NOTES — measured 2026-09-02, not marketing copy.
+      // The same claim run through all three flash models with a live key:
+      // 3.7-flash answered HTTP 503 once and then failed twice with
+      // `context deadline exceeded`; 3.6-flash returned nothing; 3.5-flash
+      // produced a full synthesis at confidence 0.90. The notes used to say
+      // 3.7 was "newest, most capable" and 3.5 was "legacy" — which steered
+      // users toward the model that does not answer and away from the one
+      // that does. A note that contradicts the measurement is worse than no
+      // note. RE-MEASURE before reordering: this is one provider's capacity
+      // on one day, and restored throughput would make these lines stale
+      // rather than wrong.
       gemini: [
-        { id: 'gemini-3.7-flash', note: 'newest, most capable' },
-        { id: 'gemini-3.6-flash', note: 'previous generation' },
-        { id: 'gemini-3.5-flash', note: 'legacy, high throughput' },
-        { id: 'gemini-3.5-flash-lite', note: 'cheapest' }
+        { id: 'gemini-3.5-flash', note: 'answers reliably (measured 2026-09-02)' },
+        { id: 'gemini-3.5-flash-lite', note: 'cheapest' },
+        { id: 'gemini-3.6-flash', note: 'returned no answer when tested' },
+        { id: 'gemini-3.7-flash', note: 'newest, but timed out when tested' }
       ]
     };
 
