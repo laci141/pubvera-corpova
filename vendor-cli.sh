@@ -11,12 +11,12 @@
 # USAGE (from WEB_DIR, in Git Bash), with the monorepo on the scientific-consensus
 # branch (its working tree must contain go.mod + cmd/ + internal/):
 #   ./vendor-cli.sh
-#   ./vendor-cli.sh "/c/Users/LACI/Desktop/printing-press-library/library/other/scientific-consensus"
+#   ./vendor-cli.sh "/c/Users/LACI/printing-press-library/library/other/scientific-consensus"
 #
 # Then:  git add bin/scientific-consensus-pp-cli-linux && docker build -t app .
 set -euo pipefail
 
-CLI_SRC="${1:-/c/Users/LACI/Desktop/printing-press-library/library/other/scientific-consensus}"
+CLI_SRC="${1:-/c/Users/LACI/printing-press-library/library/other/scientific-consensus}"
 OUT="bin/scientific-consensus-pp-cli-linux"
 
 if [ ! -f "$CLI_SRC/go.mod" ] || [ ! -d "$CLI_SRC/cmd" ]; then
@@ -37,5 +37,5 @@ mkdir -p bin
     -o "../$OUT" ./cmd/scientific-consensus-pp-cli )
 
 echo "OK:"
-file "$OUT"
+command -v file >/dev/null && file "$OUT" || true
 ls -la "$OUT"
