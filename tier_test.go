@@ -19,24 +19,26 @@ func TestTierAllowsModel(t *testing.T) {
 		endpoint  string
 		want      bool
 	}{
+		// ---- a caller spending their OWN key is never gated, on any tier ----
+		// Narrowed 2026-09-04. These rows previously expected false: a free
+		// caller was pinned to deepseek-chat even with a personal key. A
+		// free-tier tester pasted his own Gemini key and was refused, which is
+		// what surfaced it. The gate exists to protect the operator's spend,
+		// and a caller's own key spends nothing of the operator's.
 		{"free with the one permitted model", "free", "deepseek", "k", "deepseek-chat", false, "consensus", true},
-		{"free explicitly picking another model", "free", "anthropic", "k", "claude-sonnet-4-6", false, "consensus", false},
+		{"free explicitly picking another model", "free", "anthropic", "k", "claude-sonnet-4-6", false, "consensus", true},
 		// Empty model is not "no model": it resolves to the provider default,
-		// which on anthropic is claude-haiku-4-5.
-		{"free with empty model on anthropic", "free", "anthropic", "k", "", false, "consensus", false},
+		// which on anthropic is claude-haiku-4-5. Allowed now, but resolveModel
+		// still has to do its job — see TestResolveModel.
+		{"free with empty model on anthropic", "free", "anthropic", "k", "", false, "consensus", true},
 		{"free with empty model on deepseek", "free", "deepseek", "k", "", false, "consensus", true},
-		// A deepseek-hosted model that is not deepseek-chat is still refused.
-		{"free with another deepseek model", "free", "deepseek", "k", "deepseek-reasoner", false, "consensus", false},
-		// The bypass shape: leave the permitted provider in place and type a
-		// foreign model into the model field. The provider matches, so only
-		// the resolved model can catch this.
-		{"free putting a foreign model on deepseek", "free", "deepseek", "k", "claude-sonnet-4-6", false, "consensus", false},
+		{"free with another deepseek model", "free", "deepseek", "k", "deepseek-reasoner", false, "consensus", true},
+		{"free putting a foreign model on deepseek", "free", "deepseek", "k", "claude-sonnet-4-6", false, "consensus", true},
 		// gaps and evidence never reach the provider, so there is no model to
-		// refuse even when the caller supplied a key and a locked model.
-		{"free on gaps with a locked model", "free", "anthropic", "k", "claude-sonnet-4-6", false, "gaps", true},
-		{"free on evidence with a locked model", "free", "anthropic", "k", "claude-sonnet-4-6", false, "evidence", true},
-		// Same caller on an endpoint that does synthesize: refused.
-		{"free on consensus with a locked model", "free", "anthropic", "k", "claude-sonnet-4-6", false, "consensus", false},
+		// refuse regardless of tier or key.
+		{"free on gaps with any model", "free", "anthropic", "k", "claude-sonnet-4-6", false, "gaps", true},
+		{"free on evidence with any model", "free", "anthropic", "k", "claude-sonnet-4-6", false, "evidence", true},
+		{"free on consensus with any model", "free", "anthropic", "k", "claude-sonnet-4-6", false, "consensus", true},
 		// No key means no provider call, so nothing to refuse.
 		{"free with no key on consensus", "free", "anthropic", "", "claude-sonnet-4-6", false, "consensus", true},
 		{"pro is unaffected", "pro", "anthropic", "k", "claude-sonnet-4-6", false, "consensus", true},
@@ -48,26 +50,29 @@ func TestTierAllowsModel(t *testing.T) {
 		{"free keyless request", "free", "", "", "", false, "consensus", true},
 
 		// ---- the server's own key: the operator pays, so the pin applies ----
-		// These are the cases the trial fallback creates. The tier is no longer
-		// what decides; whose money it is decides.
+		// This is now the ONLY reason the gate ever refuses. The tier does not
+		// decide; whose money it is decides.
 		{"server key with the permitted model", "trial", "deepseek", "k", "deepseek-chat", true, "consensus", true},
 		{"server key with an empty model", "trial", "deepseek", "k", "", true, "consensus", true},
 		{"server key asked for sonnet", "trial", "deepseek", "k", "claude-sonnet-4-6", true, "consensus", false},
 		{"server key asked for deepseek-reasoner", "trial", "deepseek", "k", "deepseek-reasoner", true, "consensus", false},
-		// The free-tier branch would allow anything on a non-free tier, so the
-		// serverKey check has to come first — this is the case that proves it.
+		// The pin follows the key, not the plan: a higher tier running on the
+		// operator's key is still spending the operator's money.
 		{"server key on pro tier still pinned", "pro", "deepseek", "k", "claude-sonnet-4-6", true, "consensus", false},
 		{"server key on an absent tier still pinned", "", "deepseek", "k", "claude-sonnet-4-6", true, "consensus", false},
+		{"server key on free tier still pinned", "free", "deepseek", "k", "claude-sonnet-4-6", true, "consensus", false},
 		// Endpoints that never synthesize cost nothing, so they stay open even
 		// on the server's key.
 		{"server key on gaps", "trial", "deepseek", "k", "claude-sonnet-4-6", true, "gaps", true},
 		{"server key on evidence", "trial", "deepseek", "k", "claude-sonnet-4-6", true, "evidence", true},
 
-		// ---- trial spending its OWN key: not pinned ----
-		// The whole point of allowing BYOK on trial. Their money, their choice.
+		// ---- callers spending their OWN key: not pinned ----
+		// Their money, their choice — the same freedom on every tier.
 		{"trial with own key on sonnet", "trial", "anthropic", "k", "claude-sonnet-4-6", false, "consensus", true},
 		{"trial with own key on deepseek", "trial", "deepseek", "k", "deepseek-chat", false, "consensus", true},
 		{"trial with own key, empty model", "trial", "openai", "k", "", false, "consensus", true},
+		{"free with own key on gemini", "free", "gemini", "k", "gemini-3.5-flash", false, "consensus", true},
+		{"free with own key, empty model on gemini", "free", "gemini", "k", "", false, "consensus", true},
 	}
 
 	for _, tc := range tests {
@@ -130,10 +135,15 @@ func TestResolveModel(t *testing.T) {
 	}
 }
 
-// The two refusal texts are not interchangeable. Telling a trial caller to
-// "upgrade to Pro" would be wrong — pasting their own key is all they need —
-// and telling a free caller to paste a key would hide the plan limit. A future
-// edit that collapses them back into one string has to fail here.
+// The two refusal texts are not interchangeable. Telling a caller on the
+// included key to "upgrade to Pro" would be wrong — pasting their own key is
+// all they need — and telling a paying caller to paste a key would hide a plan
+// limit.
+//
+// Since 2026-09-04 only serverKeyRefusal is reachable through enforceTierGate:
+// the gate refuses on the server's key and nothing else. freeRefusal is kept
+// because tierRefusalMessage still returns it, and a test that stops covering a
+// live branch of a live function is worse than one covering a quiet branch.
 const (
 	freeRefusal      = "The free plan can only use deepseek-chat. Upgrade to Pro to use other models."
 	serverKeyRefusal = "The included trial key only runs deepseek-chat. Enter your own API key to use other models."
@@ -158,13 +168,13 @@ func TestEnforceTierGate(t *testing.T) {
 		wantMsg    string // only checked when wantOK is false
 	}{
 		{"free with deepseek-chat", "free", byok{provider: "deepseek", key: "k", model: "deepseek-chat"}, "consensus", true, ""},
-		{"free with claude-sonnet-4-6", "free", byok{provider: "anthropic", key: "k", model: "claude-sonnet-4-6"}, "consensus", false, freeRefusal},
-		// The permitted provider carrying a foreign model must still produce a
-		// 403 with the model_locked body, not just an internal false.
-		{"free putting a foreign model on deepseek", "free", byok{provider: "deepseek", key: "k", model: "claude-sonnet-4-6"}, "consensus", false, freeRefusal},
-		{"free with empty model on anthropic", "free", byok{provider: "anthropic", key: "k"}, "consensus", false, freeRefusal},
+		// Own key, any model, any tier: allowed since 2026-09-04.
+		{"free with claude-sonnet-4-6 on its own key", "free", byok{provider: "anthropic", key: "k", model: "claude-sonnet-4-6"}, "consensus", true, ""},
+		{"free putting a foreign model on deepseek", "free", byok{provider: "deepseek", key: "k", model: "claude-sonnet-4-6"}, "consensus", true, ""},
+		{"free with empty model on anthropic", "free", byok{provider: "anthropic", key: "k"}, "consensus", true, ""},
 		{"free with empty model on deepseek", "free", byok{provider: "deepseek", key: "k"}, "consensus", true, ""},
-		// The endpoints that never synthesize stay open to free callers.
+		// The exact shape the tester hit on 2026-09-04, now allowed.
+		{"free with own gemini key", "free", byok{provider: "gemini", key: "k", model: "gemini-3.5-flash"}, "consensus", true, ""},
 		{"free on gaps", "free", byok{provider: "anthropic", key: "k", model: "claude-sonnet-4-6"}, "gaps", true, ""},
 		{"free on evidence", "free", byok{provider: "anthropic", key: "k", model: "claude-sonnet-4-6"}, "evidence", true, ""},
 		{"free with no key on consensus", "free", byok{provider: "anthropic", model: "claude-sonnet-4-6"}, "consensus", true, ""},
@@ -173,9 +183,11 @@ func TestEnforceTierGate(t *testing.T) {
 		{"owner is unaffected", "owner", byok{provider: "anthropic", key: "k", model: "claude-sonnet-4-6"}, "consensus", true, ""},
 		{"no tier header", "", byok{provider: "anthropic", key: "k", model: "claude-sonnet-4-6"}, "consensus", true, ""},
 
-		// The server's key refuses with its own wording.
+		// The server's key is the only thing that still refuses, with its own
+		// wording. This block is now the whole of the 403 path.
 		{"server key with deepseek-chat", "trial", byok{provider: "deepseek", key: "k", model: "deepseek-chat", serverKey: true}, "consensus", true, ""},
 		{"server key asked for sonnet", "trial", byok{provider: "deepseek", key: "k", model: "claude-sonnet-4-6", serverKey: true}, "consensus", false, serverKeyRefusal},
+		{"server key on free tier asked for sonnet", "free", byok{provider: "deepseek", key: "k", model: "claude-sonnet-4-6", serverKey: true}, "consensus", false, serverKeyRefusal},
 		{"server key on gaps", "trial", byok{provider: "deepseek", key: "k", model: "claude-sonnet-4-6", serverKey: true}, "gaps", true, ""},
 		// Trial paying for itself is not gated at all.
 		{"trial with own key on sonnet", "trial", byok{provider: "anthropic", key: "k", model: "claude-sonnet-4-6"}, "consensus", true, ""},
@@ -218,6 +230,10 @@ func TestEnforceTierGate(t *testing.T) {
 // TestExtractBYOKServerKey covers who gets handed the operator's key. It is the
 // money question: every tier that reaches the fallback spends the operator's
 // balance, so the allow-list has to be exactly one tier and nothing else.
+//
+// This is the load-bearing test now that tierAllowsModel no longer looks at the
+// tier. If a free signup ever reached the fallback, the pin would still hold
+// the model to deepseek-chat, but the operator would be paying for it.
 func TestExtractBYOKServerKey(t *testing.T) {
 	const serverSecret = "sk-server-side-secret"
 
@@ -371,6 +387,9 @@ func TestServerKeyReportedOnlyWhenAModelRan(t *testing.T) {
 		{"trial with the caller's own key: silent", trialTier, true, "consensus", false},
 		// Pro is never handed the server key in the first place.
 		{"pro with its own key: silent", "pro", true, "consensus", false},
+		// Free is never handed the server key either, so a free caller's answer
+		// always came from their own key and needs no disclosure.
+		{"free with its own key: silent", freeTier, true, "consensus", false},
 	}
 
 	for _, tc := range tests {

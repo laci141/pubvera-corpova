@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 )
 
 // Tiers that may run on the server's own provider key. A caller on one of
@@ -63,24 +62,28 @@ func runsCheapModel(b byok) bool {
 	return b.provider == freeTierProvider && resolveModel(b.provider, b.model) == freeTierModel
 }
 
-// tierAllowsModel reports whether a caller on the given tier may run the given
-// request.
+// tierAllowsModel reports whether a caller may run the given request.
 //
-// Two distinct reasons to refuse, deliberately kept separate:
+// There is exactly ONE reason to refuse: the request would spend the
+// operator's money. The server's own key runs one pinned model and nothing
+// else. A caller who supplies their OWN key is spending their own money and is
+// never restricted, whatever their tier — a free caller with a personal key has
+// the same model freedom as pro and max.
 //
-//   - free: pinned to one model whoever pays. Free callers are always BYOK
-//     (extractBYOK never hands them the server key), so this is a plan limit,
-//     not a cost control.
-//   - any tier on the server's key: pinned because the operator pays. A trial
-//     caller who supplies their OWN key is spending their own money and is
-//     therefore NOT restricted — same freedom pro and max have.
+// That is a deliberate narrowing, decided 2026-09-04 after a free-tier tester
+// pasted his own Gemini key and was refused. The gate exists to protect the
+// operator's spend; with a caller's own key there is no spend to protect. Pro
+// is sold on what genuinely costs money — the included key's daily budget, the
+// number of apps, the request limits — not on blocking a model the caller is
+// paying for themselves.
 //
-// An absent or empty tier ALLOWS. That is the local development case: `go run .`
-// has no Caddy in front of it, so nothing sets X-Pubvera-Tier and every request
-// would otherwise be treated as free. The consequence is that this gate relies
-// entirely on Caddy setting the header on /api/* (forward_auth +
-// `copy_headers X-Pubvera-User X-Pubvera-Tier`); if that copy is ever dropped,
-// the gate silently stops gating.
+// The tier argument is no longer consulted. It is kept in the signature so the
+// Caddy header stays plumbed through to one obvious place, which is where a
+// future tier-dependent rule would go.
+//
+// Note this gate covers model choice only. Whether a caller's plan includes
+// this app at all is decided upstream by Caddy's forward_auth, and a personal
+// API key does not and must not unlock that.
 func tierAllowsModel(tier string, b byok, endpoint string) bool {
 	// No provider call means no cost and no model to refuse. Refusing here
 	// would lock callers out of endpoints that never spend anything.
@@ -90,10 +93,7 @@ func tierAllowsModel(tier string, b byok, endpoint string) bool {
 	if b.serverKey {
 		return runsCheapModel(b)
 	}
-	if strings.TrimSpace(tier) != freeTier {
-		return true
-	}
-	return runsCheapModel(b)
+	return true
 }
 
 // tierRefusalMessage explains the refusal in the terms that apply to this
