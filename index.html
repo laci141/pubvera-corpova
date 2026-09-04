@@ -1381,10 +1381,10 @@
       // on one day, and restored throughput would make these lines stale
       // rather than wrong.
       gemini: [
-        { id: 'gemini-3.5-flash', note: 'answers reliably (measured 2026-09-02)' },
+        { id: 'gemini-3.5-flash', note: 'answers reliably (measured 2026-09-04)' },
         { id: 'gemini-3.5-flash-lite', note: 'cheapest' },
-        { id: 'gemini-3.6-flash', note: 'returned no answer when tested' },
-        { id: 'gemini-3.7-flash', note: 'newest, but timed out when tested' }
+        { id: 'gemini-3.6-flash', note: 'HTTP 503 overloaded when tested 2026-09-04' },
+        { id: 'gemini-3.7-flash', note: 'newest, but unreliable: invalid JSON 2026-09-04, timed out 2026-08-31' }
       ]
     };
 

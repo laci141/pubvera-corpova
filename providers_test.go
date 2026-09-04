@@ -208,3 +208,21 @@ func TestSynthesisPromptUsesCompactedJSON(t *testing.T) {
 		t.Errorf("prompt contains study %d, which should be trimmed", maxStudiesForLLM)
 	}
 }
+
+// TestGeminiDefaultModelIsTheMeasuredWorkingOne pins the gemini default to the
+// only gemini model measured to answer. On 2026-09-04 the live log showed
+// gemini-3.7-flash returning invalid JSON and 3.6/3.8-flash returning HTTP 503,
+// while gemini-3.5-flash succeeded twice; index.html recommends 3.5 in its
+// datalist notes, and an empty model field falls through to this default, so a
+// silent move here would make the UI recommend one model and run another.
+// Re-measure before changing it.
+func TestGeminiDefaultModelIsTheMeasuredWorkingOne(t *testing.T) {
+	const want = "gemini-3.5-flash"
+	if got := providers["gemini"].DefaultModel; got != want {
+		t.Errorf("providers[gemini].DefaultModel = %q, want %q", got, want)
+	}
+	// An empty model override is what the UI actually sends.
+	if got := resolveModel("gemini", ""); got != want {
+		t.Errorf("resolveModel(gemini, \"\") = %q, want %q", got, want)
+	}
+}
