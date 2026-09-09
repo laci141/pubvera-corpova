@@ -2273,6 +2273,15 @@
         if (String(d.reason || '') === 'app_locked') {
           return `<div class="result-card"><h3>Not included in your plan</h3><p>Corpova is not part of your current plan. Upgrading your plan unlocks it.</p></div>`;
         }
+        // model_locked cannot use the money/count split below: tier.go sends
+        // only error and message for it, so there is no reason field to test
+        // and its message names neither budget nor credit — it would fall to
+        // the count branch and claim a limit was reached when none was.
+        if (String(d.error || '') === 'model_locked') {
+          const m = String(d.message || '').trim() ||
+            'The model you selected is not included in your plan. Enter your own API key to use other models.';
+          return `<div class="result-card"><h3>Model not included</h3><p>${esc(m)} Upgrading your plan unlocks more models.</p></div>`;
+        }
         // check_budget writes the wording next to the rule that produced it,
         // and pubvera-auth forwards it as message. Using it matters because the
         // refusals are not all the same shape: lifetime_exhausted and
