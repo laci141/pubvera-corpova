@@ -2691,13 +2691,17 @@
 
       if (endpoint === 'evidence') {
         const pyramidRows = (Array.isArray(result.pyramid) ? result.pyramid : [])
-          // example is the one study title the CLI names for each level. It is
-          // the only work-level detail the pyramid response carries, and it was
-          // being dropped here — so the exports listed counts with nothing to
-          // look up. Empty string rather than undefined: a level with a zero
-          // count has no example, and a missing key would shift the CSV header.
+          // example, example_doi and example_year are the work-level detail the
+          // CLI names for each level, and they were being dropped here — so the
+          // exports listed counts with nothing to look up. The title alone is
+          // not enough: a client rendering it as a citation produces one that
+          // resolves to nothing, which is why the CLI gained the DOI and year
+          // in the first place. Empty string / 0 rather than undefined: a level
+          // with a zero count has no example, and a missing key would shift the
+          // CSV header.
           .map(p => ({ design: p.design || '', count: p.count || 0, pct: p.pct || 0,
-                       example: p.example || '' }));
+                       example: p.example || '', example_doi: p.example_doi || '',
+                       example_year: p.example_year || '' }));
         lastData.evidence_pyramid = { rows: pyramidRows, response: data };
         let html = `<div class="result-card" style="--color: #7c3aed;"><h3>Evidence Pyramid</h3>`;
         html += metaRow(plural(pyramidRows.length, 'evidence level'), 'evidence_pyramid', 'corpova-evidence-pyramid.json');
