@@ -434,6 +434,41 @@
       .excluded-block { padding: 0.6rem 0.8rem; }
     }
 
+    /* SELF-CONTRADICTION WARNING (a study excluded by the AI and then cited by
+       it as evidence). Amber, like the LLM error note: nothing is broken and
+       nothing was removed — the synthesis simply disagrees with itself, and
+       the reader has to decide what to do about it. */
+    .contradiction-block {
+      margin-top: 1rem;
+      background: rgba(251, 191, 36, 0.08);
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      border-radius: 0.6rem;
+      padding: 0.8rem 1rem;
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+    }
+    .contradiction-head {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #fbbf24;
+      margin-bottom: 0.5rem;
+    }
+    .contradiction-list {
+      list-style: none;
+      padding-left: 0;
+      margin: 0;
+    }
+    .contradiction-list li {
+      font-size: 0.85rem;
+      color: #ddd;
+      padding: 0.35rem 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .contradiction-list li:first-child { border-top: none; }
+    @media (max-width: 600px) {
+      .contradiction-block { padding: 0.6rem 0.8rem; }
+    }
+
     /* Collapsible bottom section for AI-excluded studies (PRISMA-style: the
        main Supporting/Refuting columns stay clean, exclusions live here). */
     .excluded-section {
@@ -2378,6 +2413,18 @@
         Enter your own API key above to run Kimi, Gemini or Claude.</div>`;
     }
 
+    // key_evidence arrives in either of two shapes and the server keeps both:
+    // bare strings, which is what the prompt asked for before it started asking
+    // for a DOI per point, and {point, doi} objects, which is what it asks for
+    // now. A model is free to ignore the new schema — this one already ignores
+    // the instruction that forbids citing a study it excluded — so the UI reads
+    // the point text out of whichever shape arrived instead of assuming one.
+    function evidenceText(p) {
+      if (typeof p === 'string') return p;
+      if (p && typeof p === 'object') return String(p.point || '');
+      return '';
+    }
+
     function renderSynthesis(data) {
       let html = '';
       if (data.llm_error) {
@@ -2389,7 +2436,24 @@
       const color = stanceColors[s.stance] || '#00d4ff';
       let points = '';
       if (Array.isArray(s.key_evidence) && s.key_evidence.length) {
-        points = '<ul>' + s.key_evidence.map(p => `<li>${esc(p)}</li>`).join('') + '</ul>';
+        const texts = s.key_evidence.map(evidenceText).filter(Boolean);
+        if (texts.length) points = '<ul>' + texts.map(p => `<li>${esc(p)}</li>`).join('') + '</ul>';
+      }
+      // The AI excluded a study and then cited it as evidence. Both lists are
+      // rendered untouched — the server reports the conflict and never resolves
+      // it — so this block is the only thing that tells the reader the two
+      // halves of the card disagree. Absent field means the server did not
+      // measure it; empty means it measured and found none. Neither may render
+      // as "0 contradictions", same rule as corpusRetrieved and boolCell.
+      let contradictions = '';
+      if (Array.isArray(s.contradictions) && s.contradictions.length) {
+        const n = s.contradictions.length;
+        const items = s.contradictions.map(t => `<li>${esc(t)}</li>`).join('');
+        contradictions = `
+          <div class="contradiction-block">
+            <div class="contradiction-head">⚠️ The AI listed ${plural(n, 'study', 'studies')} as excluded and then cited them as evidence. Both are shown below as the model returned them. Treat this synthesis with caution.</div>
+            <ul class="contradiction-list">${items}</ul>
+          </div>`;
       }
       let excluded = '';
       if (Array.isArray(s.excluded_studies) && s.excluded_studies.length) {
@@ -2409,6 +2473,7 @@
           </p>
           <p>${esc(s.reasoning)}</p>
           ${points}
+          ${contradictions}
           ${excluded}
         </div>`;
       return html;

@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // llmTimeout bounds the single synthesis call; it must fit inside the 120s
@@ -134,9 +135,92 @@ var supportedProviders = func() string {
 // verdict, with a short human-readable reason (off-topic, wrong subject,
 // animal/in-vitro only, etc.). Title mirrors the CLI study title so the UI can
 // match it against the displayed cards.
+//
+// DOI is the model's copy of the study's DOI from the tool output, empty when
+// the tool output carries none or the model simply did not fill it in. It
+// exists so an excluded study can be matched against key_evidence mechanically
+// instead of by title text, but nothing may depend on it being present: the
+// same model that ignores the instruction not to cite an excluded study will
+// also leave this field out.
 type excludedStudy struct {
 	Title  string `json:"title"`
 	Reason string `json:"reason"`
+	DOI    string `json:"doi,omitempty"`
+}
+
+// keyEvidencePoint is one key_evidence entry: the short point the model wrote,
+// plus the DOI of the study that point cites when it cites a single study. DOI
+// is empty for a point that draws on several studies or none, and for every
+// response that ignores the object schema and returns bare strings.
+type keyEvidencePoint struct {
+	Point string `json:"point"`
+	DOI   string `json:"doi,omitempty"`
+}
+
+// keyEvidenceList accepts BOTH shapes of key_evidence: the array of bare
+// strings the prompt asked for before it started asking for DOIs, and the
+// array of {"point","doi"} objects it asks for now.
+//
+// A model that ignores the new schema is the expected case, not an exception —
+// this whole feature exists because the model ignores the instruction that
+// forbids citing a study it excluded. If the parser rejected the old shape, a
+// disobedient response would become a hard error and take the stance, the
+// reasoning and the contradiction warning down with it, which is strictly
+// worse than the warning it was supposed to produce.
+type keyEvidenceList []keyEvidencePoint
+
+// UnmarshalJSON is deliberately total: it never returns an error. key_evidence
+// is a display field, so an unrecognisable value costs a few bullets, while
+// failing here costs the entire verdict. Entries are kept as the model wrote
+// them (empty points included) — nothing in this file removes what the model
+// said, it only reports on it.
+func (l *keyEvidenceList) UnmarshalJSON(data []byte) error {
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		// Not an array. A single bare string is a plausible enough slip to
+		// carry through as one point; anything else leaves the list empty.
+		var one string
+		if json.Unmarshal(data, &one) == nil {
+			*l = keyEvidenceList{{Point: strings.TrimSpace(one)}}
+		} else {
+			*l = nil
+		}
+		return nil
+	}
+	if items == nil { // JSON null
+		*l = nil
+		return nil
+	}
+	out := make(keyEvidenceList, 0, len(items))
+	for _, item := range items {
+		var s string
+		if json.Unmarshal(item, &s) == nil { // old shape: "point text"
+			out = append(out, keyEvidencePoint{Point: strings.TrimSpace(s)})
+			continue
+		}
+		var p keyEvidencePoint
+		if json.Unmarshal(item, &p) == nil { // new shape: {"point","doi"}
+			out = append(out, keyEvidencePoint{
+				Point: strings.TrimSpace(p.Point),
+				DOI:   strings.TrimSpace(p.DOI),
+			})
+			continue
+		}
+		// A number, an array, an object whose "point" is not a string: skip
+		// the one entry rather than the whole response.
+	}
+	*l = out
+	return nil
+}
+
+// Points returns the plain point text of every entry, for call sites that want
+// the []string view key_evidence had before it carried DOIs.
+func (l keyEvidenceList) Points() []string {
+	out := make([]string, 0, len(l))
+	for _, p := range l {
+		out = append(out, p.Point)
+	}
+	return out
 }
 
 // llmSynthesis is the structured post-processing verdict returned to clients
@@ -147,9 +231,16 @@ type llmSynthesis struct {
 	Stance          string          `json:"stance"` // supports | refutes | mixed | insufficient
 	Confidence      float64         `json:"confidence"`
 	Reasoning       string          `json:"reasoning"`
-	KeyEvidence     []string        `json:"key_evidence"`
+	KeyEvidence     keyEvidenceList `json:"key_evidence"`
 	ExcludedStudies []excludedStudy `json:"excluded_studies"`
-	Model           string          `json:"model"`
+	// Contradictions names the studies the model filed under excluded_studies
+	// and then cited in key_evidence anyway. It is a report, never a repair:
+	// both lists still reach the client exactly as the model returned them and
+	// the UI warns, because silently resolving the conflict either way would
+	// put a difference between what the model said and what the user sees with
+	// nothing on the screen to say so.
+	Contradictions []string `json:"contradictions,omitempty"`
+	Model          string   `json:"model"`
 	// InputTokens and OutputTokens are the provider's own counts for this
 	// call, carried out so the caller can price the request against the
 	// user's budget. Zero when the provider omitted a usage block.
@@ -309,8 +400,8 @@ func synthesisPrompt(endpoint string, claims []string, cliJSON []byte) string {
 		"5. If too few genuinely relevant studies remain, say so and use stance \"insufficient\".\n" +
 		"6. When the tool output contains TWO claims (a comparison with claim_a and claim_b), apply steps 1-4 EQUALLY and INDEPENDENTLY to BOTH claims' study lists: examine every study under each claim with the same rigor, and put the studies you exclude from EITHER claim together into the single flat excluded_studies array. Do not neglect the second claim's studies.\n\n" +
 		"Respond with ONLY a JSON object, no markdown fences, with exactly these fields:\n" +
-		`{"stance":"supports|refutes|mixed|insufficient","confidence":0.0,"reasoning":"2-4 sentence synthesis based only on the studies you kept","key_evidence":["3-5 short points, each referencing specific numbers or studies you kept"],"excluded_studies":[{"title":"study title copied from the tool output","reason":"short reason, e.g. off-topic: about X not the claim / animal model only / in-vitro only / different substance"}]}` + "\n" +
-		"stance is your overall verdict on claim 1 (for comparisons, weigh both claims and explain in reasoning). confidence is 0-1. Leave excluded_studies as [] only if every study is genuinely relevant. " +
+		`{"stance":"supports|refutes|mixed|insufficient","confidence":0.0,"reasoning":"2-4 sentence synthesis based only on the studies you kept","key_evidence":[{"point":"short point referencing specific numbers or studies you kept","doi":"DOI of the study this point cites, copied from the tool output, or empty string if the point cites no single study"}],"excluded_studies":[{"title":"study title copied from the tool output","doi":"DOI of the study, copied from the tool output, empty string when the tool output has none","reason":"short reason, e.g. off-topic: about X not the claim / animal model only / in-vitro only / different substance"}]}` + "\n" +
+		"Give 3-5 key_evidence entries. stance is your overall verdict on claim 1 (for comparisons, weigh both claims and explain in reasoning). confidence is 0-1. Leave excluded_studies as [] only if every study is genuinely relevant. " +
 		"Never attribute an outcome to a study that its abstract does not report measuring. " +
 		"excluded_studies must contain ONLY studies you actually discarded and did NOT use for your stance, confidence, or key_evidence; a study you cite as evidence must never appear there, and lower evidence tier is never by itself a reason to exclude. " +
 		"If you want to note a study's limitations while still using it, put that in reasoning, not in excluded_studies.")
@@ -600,13 +691,146 @@ func parseSynthesis(text string) (*llmSynthesis, error) {
 		if len(r) > 200 {
 			r = r[:200]
 		}
-		cleaned = append(cleaned, excludedStudy{Title: t, Reason: r})
+		d := strings.TrimSpace(e.DOI)
+		if len(d) > 200 {
+			d = d[:200]
+		}
+		cleaned = append(cleaned, excludedStudy{Title: t, Reason: r, DOI: d})
 		if len(cleaned) >= 20 {
 			break
 		}
 	}
 	syn.ExcludedStudies = cleaned
+	// Report, do not repair. This runs on the cleaned list — an entry the
+	// keptAnyway filter already removed is no longer an exclusion, so it is no
+	// longer a contradiction either — and it changes nothing else.
+	syn.Contradictions = findContradictions(&syn)
 	return &syn, nil
+}
+
+// maxContradictions caps the reported list in line with the existing caps on
+// KeyEvidence (5) and ExcludedStudies (20): a runaway response must not be
+// able to bloat the payload through the warning either.
+const maxContradictions = 5
+
+// minTitleMatchLen is the shortest normalized title the text fallback will
+// look for inside a key_evidence point. Short strings turn up inside unrelated
+// sentences by accident, and a false warning on a clean synthesis would spend
+// the credibility the real warnings need.
+const minTitleMatchLen = 20
+
+// findContradictions returns the titles of the studies that appear in BOTH
+// excluded_studies and key_evidence — the model declaring a study unusable and
+// then using it. Live case (2026-09-09, deepseek-chat): "Using probiotics to
+// improve swine gut health and nutrient utilization" was excluded as
+// "Animal-only study (pigs), not directly applicable to human gut health
+// claim." and then quoted in key_evidence as supporting the mechanism.
+// The prompt already forbids exactly this; the model did it anyway, which is
+// why the check has to exist outside the prompt.
+//
+// It REMOVES NOTHING: not the excluded entry, not the key_evidence point, not
+// the stance, not the confidence. The client receives the model's answer whole
+// plus the observation that it disagrees with itself.
+//
+// Matching is per point: when the point and the excluded study both carry a
+// usable DOI, the DOIs decide; otherwise it falls back to looking for the
+// excluded study's normalized title inside the point's normalized text. Two
+// missing DOIs never count as a match — an absent identifier is unknown, not a
+// value that can equal another absent one.
+func findContradictions(syn *llmSynthesis) []string {
+	if syn == nil {
+		return nil
+	}
+	var out []string
+	seen := make(map[string]bool)
+	for _, e := range syn.ExcludedStudies {
+		title := strings.TrimSpace(e.Title)
+		key := normalizeForMatch(title)
+		if key == "" || seen[key] {
+			continue
+		}
+		if !citedInKeyEvidence(e, key, syn.KeyEvidence) {
+			continue
+		}
+		seen[key] = true
+		out = append(out, title)
+		if len(out) >= maxContradictions {
+			break
+		}
+	}
+	return out
+}
+
+// citedInKeyEvidence reports whether any key_evidence point refers to the
+// excluded study. normTitle is the study's title already normalized, passed in
+// because the caller needs it anyway for de-duplication.
+func citedInKeyEvidence(e excludedStudy, normTitle string, points keyEvidenceList) bool {
+	excludedDOI := normalizeDOI(e.DOI)
+	for _, p := range points {
+		if pointDOI := normalizeDOI(p.DOI); pointDOI != "" && excludedDOI != "" {
+			// Both sides named a study. Believe them: the model has said which
+			// study this point is about, and a title that merely turns up in
+			// the sentence does not outrank that.
+			if pointDOI == excludedDOI {
+				return true
+			}
+			continue
+		}
+		if len(normTitle) < minTitleMatchLen {
+			continue
+		}
+		if strings.Contains(normalizeForMatch(p.Point), normTitle) {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeForMatch lowercases, drops everything that is not a letter or a
+// digit, and collapses the rest to single spaces, so two spellings of one
+// title that differ only in case, punctuation or spacing still match.
+func normalizeForMatch(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	pendingSpace := false
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if pendingSpace && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			pendingSpace = false
+			b.WriteRune(r)
+			continue
+		}
+		pendingSpace = true
+	}
+	return b.String()
+}
+
+// normalizeDOI reduces a DOI to a comparable form: lowercased, trimmed, and
+// stripped of the resolver prefixes a model copies in along with the
+// identifier. Anything that is not a DOI normalizes to "" — including the
+// "n/a", "none" and "" a model writes when it has no DOI to give, which would
+// otherwise all compare equal to each other and manufacture contradictions out
+// of nothing. Callers must read "" as unknown, never as a comparable value.
+func normalizeDOI(s string) string {
+	d := strings.ToLower(strings.TrimSpace(s))
+	for _, prefix := range []string{
+		"https://doi.org/", "http://doi.org/",
+		"https://dx.doi.org/", "http://dx.doi.org/",
+		"doi.org/", "doi:", "doi ",
+	} {
+		if strings.HasPrefix(d, prefix) {
+			d = strings.TrimSpace(strings.TrimPrefix(d, prefix))
+			break
+		}
+	}
+	d = strings.Trim(d, ".,;")
+	// Every DOI starts with the "10." registrant prefix; nothing else does.
+	if !strings.HasPrefix(d, "10.") || len(d) <= len("10.") {
+		return ""
+	}
+	return d
 }
 
 // selfContradictingExclusion reports whether an exclusion reason states that the
