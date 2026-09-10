@@ -1613,13 +1613,33 @@
     // The retrieved corpus size for an export key, or undefined when unknown.
     // Undefined means "not measured" and MUST be omitted from the output — a 0
     // would assert that nothing was analysed, which is false.
+    // Retrieved-corpus size for an export key, or undefined when unknown. The
+    // block is OMITTED when undefined, never written as 0 or null — an empty
+    // value would mean "not measured" and "nothing analysed" at the same time.
+    //
+    // Two response shapes exist. Every analysis except compare carries one
+    // corpus at result.study_count. Compare carries TWO — result.claim_a and
+    // result.claim_b, each with its own study_count and no top-level count at
+    // all — because one run analyses two claims. Measured 2026-09-10 on a live
+    // export: 56 + 49 retrieved, 3 rows written, and the corpus block silently
+    // absent from all three compare exports because only the first shape was
+    // handled.
     function corpusRetrieved(key) {
       const srcKey = CORPUS_SOURCE[key];
       if (!srcKey) return undefined;
       const src = lastData[srcKey];
       if (!src || Array.isArray(src) || !src.response) return undefined;
-      const n = Number(src.response.result && src.response.result.study_count);
-      return Number.isFinite(n) && n > 0 ? n : undefined;
+      const result = src.response.result;
+      if (!result) return undefined;
+      const n = Number(result.study_count);
+      if (Number.isFinite(n) && n > 0) return n;
+      // Both claims must be present. Falling back to whichever one parsed
+      // would report half a corpus as if it were the whole one, which is
+      // worse than reporting nothing.
+      const a = Number(result.claim_a && result.claim_a.study_count);
+      const b = Number(result.claim_b && result.claim_b.study_count);
+      if (Number.isFinite(a) && Number.isFinite(b) && a + b > 0) return a + b;
+      return undefined;
     }
 
     // The filterable elements a meta-row's quick filter governs. Shared by the
