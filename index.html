@@ -522,6 +522,14 @@
     }
     .all-studies-section summary:hover { color: #a5f3fc; }
     .all-studies-body { padding: 0 1rem 0.8rem; }
+    .all-studies-claim-subhead {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0.8rem 0 0.5rem;
+    }
     @media (max-width: 600px) {
       .all-studies-section summary { padding: 0.6rem 0.8rem; }
       .all-studies-body { padding: 0 0.8rem 0.6rem; }
@@ -1572,7 +1580,7 @@
     const lastData = {
       consensus_verdict: null, consensus_studies: null, consensus_all: null, consensus_excluded: null,
       evidence_pyramid: null,
-      compare_summary: null, compare_studies: null, compare_excluded: null,
+      compare_summary: null, compare_studies: null, compare_all: null, compare_excluded: null,
       gaps_findings: null,
       controversies_summary: null, controversies_studies: null, controversies_excluded: null
     };
@@ -1591,6 +1599,7 @@
       evidence_pyramid:       'evidence_pyramid',
       compare_summary:        'compare_summary',
       compare_studies:        'compare_summary',
+      compare_all:            'compare_summary',
       compare_excluded:       'compare_summary',
       gaps_findings:          'gaps_findings',
       controversies_summary:  'controversies_summary',
@@ -1608,6 +1617,7 @@
       evidence_pyramid: 'Evidence pyramid analysis',
       compare_summary: 'Claim comparison',
       compare_studies: 'Claim comparison study list',
+      compare_all: 'All analyzed studies',
       compare_excluded: 'Excluded studies (PRISMA)',
       gaps_findings: 'Evidence gap analysis',
       controversies_summary: 'Controversy analysis',
@@ -2617,13 +2627,27 @@
       return `<div class="ai-scope-note">⚠️ The AI synthesis assessed ${AI_REVIEW_CAP} of ${num(total)} scored studies (the top-ranked subset). Studies ranked below ${AI_REVIEW_CAP} were neither included nor excluded by the AI filter — they were never reviewed.</div>`;
     }
 
-    function renderAllStudiesSection(all, key, filename) {
+    // `labels`, when given, is a parallel array of claim labels the same length
+    // as `all` (compare renders both claims through ONE call — calling this
+    // twice with a shared key would overwrite the first claim's rows). With
+    // labels the export gains a `claim` column and the cards are grouped under
+    // claim subheads, the same shape the Excluded section uses.
+    function renderAllStudiesSection(all, key, filename, labels) {
       const works = Array.isArray(all) ? all : [];
-      lastData[key] = works.map(w => studyRow(w, 'analyzed'));
+      const tags = Array.isArray(labels) ? labels : null;
+      lastData[key] = tags
+        ? works.map((w, i) => studyRow(w, 'analyzed', tags[i] || ''))
+        : works.map(w => studyRow(w, 'analyzed'));
       if (!works.length) return '';
+      const cards = tags
+        ? [...new Set(tags.filter(Boolean))].map(label =>
+            `<div class="all-studies-claim-subhead">${esc(label)}</div>` +
+            works.filter((w, i) => tags[i] === label).map(w => renderStudyCard(w, null)).join('')
+          ).join('')
+        : works.map(w => renderStudyCard(w, null)).join('');
       const body = metaRow(plural(works.length, 'analyzed study', 'analyzed studies') +
           ' · the full list the score was computed from', key, filename) +
-        works.map(w => renderStudyCard(w, null)).join('');
+        cards;
       return `
         <details class="all-studies-section">
           <summary>All analyzed studies (${works.length})</summary>
@@ -2846,7 +2870,7 @@
         // One shared Excluded section for both claims: items are tagged with a
         // claim label taken from which claim's arrays the card came from.
         const sinkA = [], sinkB = [];
-        const html = card(a, sinkA, 'Claim A') + card(b, sinkB, 'Claim B');
+        let html = card(a, sinkA, 'Claim A') + card(b, sinkB, 'Claim B');
         lastData.compare_studies = studyRowsAll;
         const sumRow = x => ({
           claim: x.claim || '', verdict: x.verdict || '',
@@ -2857,6 +2881,17 @@
         lastData.compare_summary = { rows: [sumRow(a), sumRow(b)], response: data };
         const labeled = sinkA.map(i => ({ work: i.work, ex: i.ex, claimLabel: `Claim A: ${a.claim || ''}` }))
           .concat(sinkB.map(i => ({ work: i.work, ex: i.ex, claimLabel: `Claim B: ${b.claim || ''}` })));
+        // One shared "All analyzed studies" section for both claims. The top
+        // columns show only the top-ranked few per stance, and the AI filter can
+        // empty a column entirely — the full list each score was computed from
+        // lives here. Excluded works stay in it on purpose: they were part of
+        // the corpus, and they also appear in the Excluded section below.
+        const allA = Array.isArray(a.all_studies) ? a.all_studies : [];
+        const allB = Array.isArray(b.all_studies) ? b.all_studies : [];
+        const labelA = `Claim A: ${a.claim || ''}`, labelB = `Claim B: ${b.claim || ''}`;
+        html += renderAllStudiesSection(
+          allA.concat(allB), 'compare_all', 'corpova-compare-all-studies.json',
+          allA.map(() => labelA).concat(allB.map(() => labelB)));
         return html + renderExcludedSection(labeled, 'compare_excluded', 'corpova-compare-excluded.json');
       }
 

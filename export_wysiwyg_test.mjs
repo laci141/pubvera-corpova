@@ -603,5 +603,114 @@ check('S10 legacy UI line prints 0 for the missing count',
 check('S10 legacy UI line has no NaN/undefined', /NaN|undefined/.test(htmlLegacy), false);
 
 
+// -- scenario 11: compare renders the FULL analyzed list, both claims --------
+// A live run showed "0 studies shown" for claim A while the card above read
+// "Studies: 16": the top columns hold only the top-ranked few per stance, and
+// the AI filter had excluded both of them. all_studies was in the response the
+// whole time and simply never rendered for compare. The section is shared by
+// both claims, so the overwrite trap (lastData[key] = ... ASSIGNS) is the
+// first thing asserted here.
+const work11 = (title, extra) => Object.assign({
+  title, authors: ['Smith, A.'], journal: 'J. Ev.', year: 2020,
+  cited_by_count: 3, design: 'rct', stance: 'supporting', stance_confidence: 0.7,
+  doi: '10.1/' + title.replace(/\s+/g, '-'),
+}, extra || {});
+
+const A11 = ['a-one', 'a-two', 'a-three'].map(t => work11(t));
+// The third claim-B work is one the AI filter threw out. It must still show up
+// in the full analyzed list: it is part of the corpus the score came from.
+const B11 = [work11('b-one'), work11('b-two'), work11('b-excluded-work')];
+const CLAIM_A11 = 'coffee lowers stroke risk';
+const CLAIM_B11 = 'coffee raises stroke risk';
+
+const compareResult = (allA, allB) => ({
+  claim_a: { claim: CLAIM_A11, verdict: 'v', consensus_score: 0.9, confidence: 0.8,
+    evidence_strength: 's', apex_design: 'rct', study_count: allA.length, stance_method: 'm',
+    top_supporting: [], top_refuting: [], all_studies: allA },
+  claim_b: { claim: CLAIM_B11, verdict: 'v', consensus_score: 0.4, confidence: 0.5,
+    evidence_strength: 's', apex_design: 'rct', study_count: allB.length, stance_method: 'm',
+    top_supporting: [work11('b-one')], top_refuting: [], all_studies: allB },
+});
+
+const renderCompare11 = (allA, allB) => {
+  const result = compareResult(allA, allB);
+  ctx(`lastQuery = ${JSON.stringify(CLAIM_A11)}; aiExcluded = [{ title: 'b-excluded-work', reason: 'off topic' }];`);
+  // The 4th argument is the raw API envelope, which is what the corpus block
+  // resolves the retrieved count from.
+  return ctx(`renderResult('compare', ${JSON.stringify(result)}, 'llm:test', ${JSON.stringify({ result })})`);
+};
+
+const html11 = renderCompare11(A11, B11);
+const rows11 = ctx(`lastData.compare_all`);
+
+// 11.1 -- the overwrite trap: BOTH claims' rows survive one shared key.
+check('S11 compare_all row count is A + B', rows11.length, A11.length + B11.length);
+check('S11 compare_all carries both claim labels',
+  [...new Set(rows11.map(r => r.claim))].sort(),
+  [`Claim A: ${CLAIM_A11}`, `Claim B: ${CLAIM_B11}`].sort());
+check('S11 compare_all keeps every title, in claim order',
+  rows11.map(r => r.title), [...A11, ...B11].map(w => w.title));
+
+// 11.2 -- every row carries a non-empty claim field.
+check('S11 no compare_all row lacks a claim', rows11.filter(r => !r.claim).length, 0);
+check('S11 every compare_all row has the claim key',
+  rows11.every(r => 'claim' in r), true);
+
+// 11.3 -- an AI-excluded study is NOT filtered out of the analyzed list.
+check('S11 excluded study still present in compare_all',
+  rows11.filter(r => r.title === 'b-excluded-work').length, 1);
+check('S11 excluded study also still in compare_excluded',
+  ctx(`lastData.compare_excluded.some(r => r.title === 'b-excluded-work')`), true);
+
+// 11.4 -- it is actually on screen, once, after the cards and before Excluded.
+check('S11 section rendered with the combined count',
+  html11.includes('<summary>All analyzed studies (6)</summary>'), true);
+check('S11 exactly one all-studies section',
+  (html11.match(/class="all-studies-section"/g) || []).length, 1);
+check('S11 two claim subheads inside it',
+  (html11.match(/class="all-studies-claim-subhead"/g) || []).length, 2);
+check('S11 section sits before the excluded section',
+  html11.indexOf('all-studies-section') < html11.indexOf('excluded-section'), true);
+
+// 11.5 -- one claim with an empty all_studies still renders and exports the other.
+const htmlEmptyA = renderCompare11([], B11);
+const rowsEmptyA = ctx(`lastData.compare_all`);
+check('S11 empty claim A: rows are claim B only', rowsEmptyA.map(r => r.title), B11.map(w => w.title));
+check('S11 empty claim A: every row still labelled claim B',
+  [...new Set(rowsEmptyA.map(r => r.claim))], [`Claim B: ${CLAIM_B11}`]);
+check('S11 empty claim A: section still rendered',
+  htmlEmptyA.includes('<summary>All analyzed studies (3)</summary>'), true);
+check('S11 empty claim A: only claim B gets a subhead',
+  (htmlEmptyA.match(/class="all-studies-claim-subhead"/g) || []).length, 1);
+// Both empty: nothing to show, and the key holds an empty list rather than stale rows.
+const htmlEmptyBoth = renderCompare11([], []);
+check('S11 both empty: no section', htmlEmptyBoth.includes('all-studies-section'), false);
+check('S11 both empty: compare_all is emptied', ctx(`lastData.compare_all`), []);
+
+// 11.6 -- the export path: the claim column reaches CSV and JSON.
+// Re-render the populated case first — the empty runs above left the key empty.
+renderCompare11(A11, B11);
+ctx(`downloadCSV('compare_all','ca.csv'); downloadJSON('compare_all','ca.json');`);
+const [csv11, json11] = downloads.slice(-2);
+check('S11 CSV has a claim column', csvCols(csv11.text).includes('claim'), true);
+check('S11 CSV carries both claim labels',
+  [`Claim A: ${CLAIM_A11}`, `Claim B: ${CLAIM_B11}`].filter(l => !csv11.text.includes(l)), []);
+check('S11 JSON exports every row', JSON.parse(json11.text).rows.length, 6);
+check('S11 corpus block resolves through compare_summary',
+  JSON.parse(json11.text).export.corpus, { retrieved: A11.length + B11.length, displayed: 6 });
+
+// 11.7 -- consensus is the negative test: it must be untouched by all of this.
+// Same fixture, three-argument call, no claim column, same rows and order.
+const cons11 = ctx(`renderAllStudiesSection(${JSON.stringify(A11)}, 'consensus_all', 'corpova-consensus-all-studies.json')`);
+const consRows11 = ctx(`lastData.consensus_all`);
+check('S11 consensus_all row count unchanged', consRows11.length, A11.length);
+check('S11 consensus_all order unchanged', consRows11.map(r => r.title), A11.map(w => w.title));
+check('S11 consensus_all has NO claim column',
+  consRows11.some(r => 'claim' in r), false);
+check('S11 consensus_all renders no claim subheads',
+  cons11.includes('all-studies-claim-subhead'), false);
+check('S11 consensus_all group is still "analyzed"',
+  [...new Set(consRows11.map(r => r.group))], ['analyzed']);
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);
