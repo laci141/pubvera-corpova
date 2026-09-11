@@ -2806,7 +2806,16 @@
       }
 
       if (endpoint === 'evidence') {
-        const pyramidRows = (Array.isArray(result.pyramid) ? result.pyramid : [])
+        // study_count is the measured corpus size. Zero works means the search
+        // found nothing, which is not the same as eleven levels each measured
+        // at zero — the table would claim the literature was surveyed when it
+        // was not. Same rule as contradictions and boolCell: absent and
+        // measured-empty must not render alike. total > 0 rather than !total,
+        // so a missing study_count (NaN) does not fall into the measured-zero
+        // branch either.
+        const total = Number(result.study_count);
+        const hasWorks = total > 0;
+        const pyramidRows = (hasWorks && Array.isArray(result.pyramid) ? result.pyramid : [])
           // example, example_doi and example_year are the work-level detail the
           // CLI names for each level, and they were being dropped here — so the
           // exports listed counts with nothing to look up. The title alone is
@@ -2814,19 +2823,22 @@
           // resolves to nothing, which is why the CLI gained the DOI and year
           // in the first place. Empty string / 0 rather than undefined: a level
           // with a zero count has no example, and a missing key would shift the
-          // CSV header.
+          // CSV header. With no works the row set is empty, so the export
+          // reports nothing rather than eleven empty levels.
           .map(p => ({ design: p.design || '', count: p.count || 0, pct: p.pct || 0,
                        example: p.example || '', example_doi: p.example_doi || '',
                        example_year: p.example_year || '' }));
         lastData.evidence_pyramid = { rows: pyramidRows, response: data };
         let html = `<div class="result-card" style="--color: #7c3aed;"><h3>Evidence Pyramid</h3>`;
         html += metaRow(plural(pyramidRows.length, 'evidence level'), 'evidence_pyramid', 'corpova-evidence-pyramid.json');
-        if (Array.isArray(result.pyramid)) {
+        if (hasWorks && Array.isArray(result.pyramid)) {
           html += '<table style="width:100%;font-size:0.9rem;"><tr><th>Design</th><th>Count</th><th>%</th><th>Example study</th></tr>';
           result.pyramid.forEach(p => {
             html += `<tr><td>${esc(p.design)}</td><td>${num(p.count)}</td><td>${Number(p.pct)||0}%</td><td style="font-size:0.85rem;opacity:0.85;">${esc(p.example || '')}</td></tr>`;
           });
           html += '</table>';
+        } else {
+          html += `<p style="margin-top:1rem;opacity:0.85;">${esc(result.note || 'The search returned no works, so no evidence levels were counted.')}</p>`;
         }
         // classified_by_pubtype is how many works carried a publication type
         // from OpenAlex; the rest were placed by title heuristics or left
@@ -2837,7 +2849,6 @@
         // figure was in the response and not on screen, which left that shift
         // unexplained.
         const typed = Number(result.classified_by_pubtype);
-        const total = Number(result.study_count);
         let typedNote = '';
         if (Number.isFinite(typed) && total > 0) {
           const pctTyped = Math.round(100 * typed / total);
