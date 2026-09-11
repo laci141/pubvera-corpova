@@ -2146,13 +2146,13 @@
         : 'BibTeX citation for this analysis (@misc)';
       return '<div class="meta-row" data-key="' + key + '"><span class="meta">' + text + '<span class="qcount"></span></span>' +
         '<span class="dl-group">' +
-        // 1. sor: szuromezo (ha van) + BibTeX + Excel
+        // Line 1: quick filter (when present) + BibTeX + Excel
         '<span class="dl-line">' +
         (withFilter ? '<input class="qfilter" type="text" placeholder="🔍 Filter results…">' : '') +
         '<button class="dl" title="' + bibTitle + '" onclick="downloadBibTeX(\'' + key + '\',\'' + bibName + '\')">⬇ BibTeX</button>' +
         '<button class="dl" onclick="downloadXLSX(\'' + key + '\',\'' + xlsxName + '\')">⬇ Excel</button>' +
         '</span>' +
-        // 2. sor: CSV + JSON
+        // Line 2: CSV + JSON
         '<span class="dl-line">' +
         '<button class="dl" onclick="downloadCSV(\'' + key + '\',\'' + csvName + '\')">⬇ CSV</button>' +
         '<button class="dl" onclick="downloadJSON(\'' + key + '\',\'' + filename + '\')">⬇ JSON</button>' +
