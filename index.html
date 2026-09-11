@@ -1626,11 +1626,17 @@
     };
 
     // Shared helper: pulls the row array out of whatever the module stored.
+    // Modules that store { rows, response } have arrays on both sides — rows,
+    // and whatever list the raw response carries. Picking d.rows explicitly
+    // rather than the first array found means the answer no longer depends on
+    // key insertion order, which nothing guarantees and which would silently
+    // start returning the response's array if the shape were ever reordered.
     function rowsFromLastData(key) {
       const d = lastData[key];
       if (!d) return null;
       if (Array.isArray(d)) return d;
       if (typeof d === 'object') {
+        if (Array.isArray(d.rows)) return d.rows;
         for (const k of Object.keys(d)) { if (Array.isArray(d[k])) return d[k]; }
       }
       return null;
@@ -1808,7 +1814,13 @@
     function downloadCSV(key, filename) {
       if (!lastData[key]) { alert('Run an analysis first.'); return; }
       const raw = rowsFromLastData(key);
-      if (!raw || !raw.length) { alert('CSV export is not available for this result — use JSON.'); return; }
+      // No row array at all means this module does not produce tabular output;
+      // an empty one means it ran and found nothing. The second is not a
+      // missing feature, and saying "not available" there is false — the same
+      // analysis exports fine on the next query. Same split as the pyramid
+      // table: absent and measured-empty must not report alike.
+      if (!raw) { alert('CSV export is not available for this result — use JSON.'); return; }
+      if (!raw.length) { alert('This analysis returned no rows, so there is nothing to export.'); return; }
       const v = exportRows(key);
       if (!v.rows.length) { alert('Run an analysis first — or clear the filters, nothing is visible.'); return; }
       triggerDownload(new Blob([toCSV(v.rows, exportHeader(key, v.rows, v.scope))], { type: 'text/csv;charset=utf-8' }), filename);
@@ -1819,7 +1831,10 @@
       if (typeof XLSX === 'undefined') { alert('Excel library not loaded — check your connection and reload.'); return; }
       if (!lastData[key]) { alert('Run an analysis first.'); return; }
       const raw = rowsFromLastData(key);
-      if (!raw || !raw.length) { alert('Excel export is not available for this result — use JSON.'); return; }
+      // Same split as downloadCSV: no row array means not tabular, an empty
+      // one means measured and found nothing.
+      if (!raw) { alert('Excel export is not available for this result — use JSON.'); return; }
+      if (!raw.length) { alert('This analysis returned no rows, so there is nothing to export.'); return; }
       const v = exportRows(key);
       if (!v.rows.length) { alert('Run an analysis first — or clear the filters, nothing is visible.'); return; }
       const rows = v.rows;
