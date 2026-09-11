@@ -1751,6 +1751,13 @@
       return n + ' ' + (n === 1 ? word : (pluralForm !== undefined ? pluralForm : word + 's'));
     }
 
+    // Count-aware pronoun for sentences that refer back to a pluralised noun
+    // produced by plural(). Kept separate because plural() also emits the
+    // number, which a pronoun must not repeat.
+    function pronoun(n, singular, pluralForm) {
+      return n === 1 ? singular : pluralForm;
+    }
+
     // Provenance line embedded in every exported file: app, analysis, query,
     // shown-vs-total counts, active filters, data source, export date.
     function exportHeader(key, rows, scope) {
@@ -2461,7 +2468,7 @@
         const items = s.contradictions.map(t => `<li>${esc(t)}</li>`).join('');
         contradictions = `
           <div class="contradiction-block">
-            <div class="contradiction-head">⚠️ The AI listed ${plural(n, 'study', 'studies')} as excluded and then cited them as evidence. Both are shown below as the model returned them. Treat this synthesis with caution.</div>
+            <div class="contradiction-head">⚠️ The AI listed ${plural(n, 'study', 'studies')} as excluded and then cited ${pronoun(n, 'it', 'them')} as evidence. Both lists are shown below as the model returned them. Treat this synthesis with caution.</div>
             <ul class="contradiction-list">${items}</ul>
           </div>`;
       }
