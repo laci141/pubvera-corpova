@@ -2369,6 +2369,14 @@
             'The model you selected is not included in your plan. Enter your own API key to use other models.';
           return `<div class="result-card"><h3>Model not included</h3><p>${esc(m)} Upgrading your plan unlocks more models.</p></div>`;
         }
+        // lifetime_exhausted counts every logged run, including runs made
+        // during a trial that has since expired. "Free allowance" is wrong
+        // for such a user, so this branch uses wording that is true for both
+        // a free user and an ex-trial user. A personal API key does not lift
+        // a count limit, so no BYOK sentence is offered here.
+        if (String(d.reason || '') === 'lifetime_exhausted') {
+          return `<div class="result-card"><h3>Included analyses used up</h3><p>The analyses included with your account are used up. Upgrading your plan lets you continue.</p></div>`;
+        }
         // check_budget writes the wording next to the rule that produced it,
         // and pubvera-auth forwards it as message. Using it matters because the
         // refusals are not all the same shape: lifetime_exhausted and
@@ -2385,7 +2393,9 @@
         let msg = dbMsg || 'You have used up the analyses included in your plan for this period.';
         const resets = resetsAtText(d.resets_at);
         if (resets) msg += ` Your quota resets on ${resets}.`;
-        msg += ' Upgrading your plan raises the limit.';
+        // Do not repeat the upgrade advice when the database message already
+        // gives it, which is what produced two "upgrade" sentences in a row.
+        if (!/upgrad/i.test(dbMsg)) msg += ' Upgrading your plan raises the limit.';
         // A money refusal (daily AI credit / budget) has a second, FREE way
         // out that costs the user nothing to try: BYOK is ungated on every
         // tier, and an analysis paid with the caller's own key is not metered
