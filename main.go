@@ -187,6 +187,30 @@ func divergenceFlag(cliJSON []byte, syn *llmSynthesis) (bool, string) {
 	return false, ""
 }
 
+// Server-side timeouts. ReadHeaderTimeout was the only one set, which left the
+// request BODY with no deadline at all: decodePOST caps the body at 1 MB, but a
+// size limit is not a time limit, and a client that sends those bytes one per
+// minute holds a handler goroutine for as long as it likes. Caddy fronts this
+// app in production and sets no request timeout of its own, so this is the only
+// place the limit exists.
+//
+// WriteTimeout is the one that must not be guessed. It covers the whole
+// response, and a request is allowed requestBudget to produce it, so anything
+// at or below that would cut off legitimate slow analyses rather than attacks
+// — and only the slowest ones, intermittently, which is far harder to diagnose
+// than the exposure being closed.
+const (
+	srvReadHeaderTimeout = 10 * time.Second
+	// The body is a small JSON object, already capped at 1 MB. Thirty seconds
+	// is far more than a real client needs and far less than a slow-loris
+	// attacker wants.
+	srvReadTimeout = 30 * time.Second
+	// The full request budget plus room to write the response.
+	srvWriteTimeout = requestBudget + 30*time.Second
+	// Keep-alive connections that go quiet are released rather than held.
+	srvIdleTimeout = 120 * time.Second
+)
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleRoot)
@@ -210,7 +234,10 @@ func main() {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: srvReadHeaderTimeout,
+		ReadTimeout:       srvReadTimeout,
+		WriteTimeout:      srvWriteTimeout,
+		IdleTimeout:       srvIdleTimeout,
 	}
 	// The response cache is a SOFT dependency. newRedisCacheFromEnv only reads
 	// the environment — it never dials — and probeAsync reports reachability from
@@ -418,6 +445,16 @@ var cliPacingArgs = []string{"--rate-limit", "0.15", "--timeout", "100s"}
 // fails the request: the heuristic result is returned with a redacted
 // llm_error. It centralizes the exec, timeouts, key-redaction, and
 // JSON-validation shared by every endpoint.
+// requestBudget is the whole-request deadline runCLIJSON gets. It covers the
+// CLI leg AND the LLM synthesis that follows it: llmSynthesize derives its own
+// narrower llmTimeout from this context rather than starting a fresh one, and
+// a waiter on a shared CLI run waits within it too, so cliFlightTimeout does
+// not stack on top.
+//
+// It was written inline at the call site; naming it here is what lets
+// srvWriteTimeout be derived from it rather than guessed.
+const requestBudget = 120 * time.Second
+
 func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string, claims []string, args []string, cacheKey string) {
 	// The plan gate runs first — before the CLI child, and therefore before the
 	// llmSynthesize call further down. A refused request must not consume an
@@ -427,7 +464,7 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), requestBudget)
 	defer cancel()
 
 	// The cache covers the CLI leg ONLY: the child CLI is always keyless, so its
