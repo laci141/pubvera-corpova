@@ -3,30 +3,46 @@
 # binary at bin/scientific-consensus-pp-cli-linux, which the Dockerfile copies
 # into the runtime image.
 #
-# WHY: a Windows .exe can't run in the Linux container, and the CLI lives on an
-# unmerged monorepo branch (so `go install github.com/...` won't resolve). This
-# vendors the CLI Go source into ./cli-src (build scratch, gitignored) and builds
-# the linux binary from it.
+# WHY: a Windows .exe cannot run in the Linux container. This vendors the CLI Go
+# source into ./cli-src (build scratch, gitignored) and builds the linux binary
+# from it.
 #
-# USAGE (from WEB_DIR, in Git Bash), with the monorepo on the scientific-consensus
-# branch (its working tree must contain go.mod + cmd/ + internal/):
+# The default source path is specific to one workstation. That is acceptable
+# because the check below refuses to run against a path that does not hold the
+# CLI, so a wrong machine gets an error naming the path it tried, not a silent
+# build from the wrong source. PP_LIBRARY_ROOT exists so a different machine can
+# be configured once for every pubvera repo instead of editing each script.
+#
+# Resolution order: explicit argument, then PP_LIBRARY_ROOT, then the default.
+#
+# The branch matters. There are two monorepo clones on this workstation and they
+# sit on different branches; a binary vendored from a feature branch is
+# indistinguishable from a correct one. The script prints the branch it is
+# building from before it builds — read that line every time.
+#
+# USAGE (from the corpova repo, Git Bash):
 #   ./vendor-cli.sh
 #   ./vendor-cli.sh "/c/Users/LACI/printing-press-library/library/other/scientific-consensus"
+#   PP_LIBRARY_ROOT="/path/to/printing-press-library" ./vendor-cli.sh
 #
 # Then:  git add bin/scientific-consensus-pp-cli-linux && docker build -t app .
 set -euo pipefail
 
-CLI_SRC="${1:-/c/Users/LACI/printing-press-library/library/other/scientific-consensus}"
+PP_ROOT="${PP_LIBRARY_ROOT:-/c/Users/LACI/printing-press-library}"
+CLI_SRC="${1:-$PP_ROOT/library/other/scientific-consensus}"
 OUT="bin/scientific-consensus-pp-cli-linux"
 
 if [ ! -f "$CLI_SRC/go.mod" ] || [ ! -d "$CLI_SRC/cmd" ]; then
   echo "ERROR: CLI source not found at: $CLI_SRC" >&2
-  echo "       Check out the monorepo on the scientific-consensus branch first" >&2
-  echo "       (the working tree must actually contain go.mod + cmd/ + internal/)." >&2
+  echo "" >&2
+  echo "Expected a directory holding go.mod, cmd/ and internal/. Either:" >&2
+  echo "  - pass the path:   ./vendor-cli.sh \"/path/to/library/other/scientific-consensus\"" >&2
+  echo "  - or set the root: PP_LIBRARY_ROOT=\"/path/to/printing-press-library\"" >&2
   exit 1
 fi
 
 echo "Vendoring CLI Go source from: $CLI_SRC"
+( cd "$CLI_SRC" && git rev-parse --abbrev-ref HEAD && git log --oneline -1 -- . )
 rm -rf cli-src && mkdir -p cli-src
 cp "$CLI_SRC/go.mod" "$CLI_SRC/go.sum" cli-src/
 cp -r "$CLI_SRC/cmd" "$CLI_SRC/internal" cli-src/
