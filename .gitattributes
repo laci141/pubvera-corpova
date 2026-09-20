@@ -6,10 +6,36 @@
 *.go text eol=lf
 
 # The committed CLI binary has no file extension, so git classifies it by
-# content sniffing alone (currently -text, correctly). This makes that explicit
-# and immune to any future broad rule such as `* text=auto`: the first 12 digits
-# of this file's sha256 are the clihash segment of every production cache key
-# (b659fff65cb9), and a single converted byte would both corrupt the ELF and
-# silently re-key the cache. `binary` is the -text -diff -merge macro; all three
-# are correct for a 22MB build artefact.
+# content sniffing alone. This makes that explicit and immune to any future
+# broad rule such as `* text=auto`: the first 12 digits of this file's sha256
+# are the clihash segment of every production cache key, and a single converted
+# byte would both corrupt the ELF and silently re-key the cache. `binary` is the
+# -text -diff -merge macro; all three are correct for a 24MB build artefact.
+#
+# The hash is deliberately not quoted here any more. It was, and it went stale:
+# the comment named b659fff65cb9 while the vendored binary had long since become
+# e0c9ab3e2c51. A value that must be re-checked to be trusted is worse than no
+# value, because a reader believes it. Measure it instead:
+#   sha256sum bin/scientific-consensus-pp-cli-linux | cut -c1-12
 bin/** binary
+
+# The vendored CLI is tracked with Git LFS. git cannot delta-compress a 24 MB
+# binary between versions, so every vendoring added another full copy to the
+# history permanently. Measured on 2026-09-20: 40 distinct blobs, and the packed
+# repository at 127 MiB after gc.
+#
+# LFS stores a ~130 byte pointer in the commit and keeps the binary outside the
+# object database, so a clone fetches the current version instead of all forty.
+#
+# This line comes AFTER `bin/** binary` on purpose: the last matching rule wins,
+# and the LFS filter must be the one that applies. -text is repeated here rather
+# than inherited, so this line remains correct on its own if the rule above ever
+# moves or is removed.
+#
+# This stops future growth only. The forty blobs already in the history stay
+# where they are: removing them means rewriting history, which invalidates every
+# existing clone and every commit hash. That is a separate decision.
+#
+# Anyone checking out this repository needs git-lfs installed. CI already checks
+# out with lfs: true in both jobs.
+bin/scientific-consensus-pp-cli-linux filter=lfs diff=lfs merge=lfs -text
