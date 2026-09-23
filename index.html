@@ -3211,7 +3211,7 @@
 
       // Dynamic import, not a static one: a static import runs before the fetch
       // above, so an unconfigured page would still pay for the library.
-      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.117.0');
       const sb = createClient(url, key);
       window.sb = sb;
 
