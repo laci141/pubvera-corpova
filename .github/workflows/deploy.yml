@@ -1,5 +1,9 @@
 name: Build and Deploy Corpova
 
+# pull_request runs both jobs, but never publishes an image: in the build job
+# the GHCR login and the push are gated on the event not being a
+# pull_request. Watchtower on the server deploys whatever :latest points at,
+# so a PR that could push :latest would deploy unmerged code.
 on:
   push:
     branches: [main]
@@ -99,9 +103,12 @@ jobs:
           done
           echo "$n inline block(s) parse"
 
+  # This job runs on pull_request too. It used to be skipped there with a
+  # job-level if, which meant a PR never built the image — so the label check
+  # below could never fire on a PR. The gate now sits on the two steps that
+  # touch the registry instead.
   build:
     needs: test
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -115,18 +122,60 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
+      # The image carries the upstream commit its CLI was built from as the
+      # label org.pubvera.cli.commit. On pubvera-recallis that label once
+      # shipped EMPTY (an ARG default that never reached the runtime stage)
+      # while the build, the tests and the deploy were all green. So this
+      # builds the image locally first and compares the label with the commit
+      # pinned in the Dockerfile, BEFORE anything is pushed. A mismatch stops
+      # the job, so an image that cannot say where its CLI came from never
+      # reaches :latest.
+      #
+      # The second build below reuses the gha cache this one fills, so the
+      # extra cost is the load into the runner's Docker, not a rebuild.
+      - name: Build image for the label check
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: corpova-label-check:ci
+          cache-from: type=gha
+
+      - name: Check the CLI commit label
+        run: |
+          set -euo pipefail
+          expected=$(sed -n 's/^ARG PP_LIBRARY_COMMIT=//p' Dockerfile)
+          actual=$(docker image inspect corpova-label-check:ci --format '{{ index .Config.Labels "org.pubvera.cli.commit" }}')
+          echo "expected: ${expected}"
+          echo "actual:   ${actual}"
+          if ! printf '%s' "$expected" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Dockerfile has no global 'ARG PP_LIBRARY_COMMIT=<40-hex commit>' line"
+            exit 1
+          fi
+          if [ "$actual" != "$expected" ]; then
+            echo "label org.pubvera.cli.commit does not match the commit pinned in the Dockerfile"
+            exit 1
+          fi
+          echo "label matches the pinned commit"
+
+      # Skipped on pull_request: a PR build proves the image builds, but has no
+      # reason to hold registry credentials.
       - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # On pull_request the image is built but not pushed, so :latest — and
+      # therefore what Watchtower deploys — only ever moves on main.
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
