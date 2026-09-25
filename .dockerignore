@@ -7,12 +7,12 @@
 # Docs aren't needed in the runtime image.
 *.md
 
-# Windows-built binaries can't run in the Linux image; the runtime copies only
-# the pre-built linux CLI (bin/scientific-consensus-pp-cli-linux).
+# Windows-built binaries can't run in the Linux image. The CLI itself is built
+# inside the image from a pinned upstream commit (see the Dockerfile), so no
+# local binary belongs in the build context.
 *.exe
 bin/server*
 bin/*.exe
 
-# cli-src/ is build scratch used to cross-compile the linux CLI; not needed in
-# the image (the runtime copies the already-built binary).
+# cli-src/ is build scratch from the old vendoring flow; not needed in the image.
 cli-src/

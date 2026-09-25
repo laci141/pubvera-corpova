@@ -457,50 +457,6 @@ func TestCacheKeyLengthIsBounded(t *testing.T) {
 	}
 }
 
-// TestRealCLIBinariesHashDistinctly checks the committed artefacts themselves,
-// since they are what production actually keys on.
-//
-// The linux binary is committed and is the one production keys on, so its
-// absence is a failure, not a reason to skip: in CI it means the checkout is
-// broken (LFS, .gitignore) and the key nobody verified is the key that ships.
-// The .exe is local-only by design (see .gitignore), so it is checked when
-// present and passed over when not. The earlier version skipped the whole test
-// on the first missing file, and since .exe came first in the list, CI verified
-// neither binary while still reporting green.
-func TestRealCLIBinariesHashDistinctly(t *testing.T) {
-	const required = "scientific-consensus-pp-cli-linux"
-
-	seen := map[string]string{}
-	checked := 0
-
-	for _, name := range []string{"scientific-consensus-pp-cli.exe", required} {
-		p := filepath.Join("bin", name)
-		if _, err := os.Stat(p); err != nil {
-			if name == required {
-				t.Fatalf("committed binary %s is missing: %v — production keys on this file", p, err)
-			}
-			t.Logf("%-40s -> absent, skipped (local-only by .gitignore)", name)
-			continue
-		}
-		h, err := cliBinaryHash(p)
-		if err != nil {
-			t.Fatalf("hash %s: %v", p, err)
-		}
-		if other, dup := seen[h]; dup {
-			t.Errorf("%s and %s share the hash %s", other, name, h)
-		}
-		seen[h] = name
-		checked++
-		t.Logf("%-40s -> sc:%s:%s:", name, cacheEngineVersion, h)
-	}
-
-	// Guards against a future edit that turns every entry optional and leaves
-	// the test passing while asserting nothing.
-	if checked == 0 {
-		t.Fatal("no binary was hashed; this test asserted nothing")
-	}
-}
-
 func TestNormalizeClaim(t *testing.T) {
 	cases := map[string]string{
 		"  vitamin D  ":               "vitamin D",
