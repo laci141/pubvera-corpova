@@ -41,6 +41,7 @@ RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app
 WORKDIR /app
 COPY --from=web-builder /out/server ./server
 COPY --from=cli-builder /go/bin/scientific-consensus-pp-cli ./bin/scientific-consensus-pp-cli
+COPY bin/scientific-consensus-pp-cli-linux ./mutation-check
 COPY index.html ./index.html
 RUN chmod +x ./bin/scientific-consensus-pp-cli
 
