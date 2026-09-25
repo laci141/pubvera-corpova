@@ -5,7 +5,7 @@
 ```bash
 cd /c/Users/LACI/scientific-consensus-web
 
-# Build the image (multi-stage: builds web server on Linux + uses vendored CLI)
+# Build the image (multi-stage: builds the CLI from a pinned upstream commit + the web server)
 docker build -t scientific-consensus-web:latest .
 
 # Run locally
@@ -18,8 +18,9 @@ curl http://127.0.0.1:8090/api/consensus -X POST \
   -d '{"claim":"vitamin D reduces infections","limit":10}'
 ```
 
-> The runtime image copies the pre-built `bin/scientific-consensus-pp-cli-linux`.
-> Regenerate it with `./vendor-cli.sh` whenever the CLI source changes.
+> The image builds the CLI from one pinned upstream printing-press-library commit
+> (`ARG PP_LIBRARY_COMMIT` in the Dockerfile) and stamps it on the image as the
+> label `org.pubvera.cli.commit`. To move to a newer CLI, change that commit.
 
 ## Render Deployment
 
@@ -186,16 +187,16 @@ Two independent invalidation handles, because a verdict can move in two
 independent ways:
 
 - **`clihash` — automatic.** The first 12 hex digits of the sha256 of the CLI
-  binary the process actually shells out to. Replacing
-  `bin/scientific-consensus-pp-cli-linux` re-keys the whole cache by itself, with
-  no human step and no deploy note.
+  binary the process actually shells out to (`/app/bin/scientific-consensus-pp-cli`
+  in the image). Building the image from a different `PP_LIBRARY_COMMIT`
+  re-keys the whole cache by itself, with no human step and no deploy note.
 - **`engine` — manual** (`cacheEngineVersion` in `cache.go`). Bump it when the
   **web** layer's scoring logic changes — divergence rules, compaction, the
   synthesis prompt — because none of that touches the CLI binary, so no hash
   moves on its own. A needless bump costs one cold fetch per query; a missing one
   serves verdicts already known to be wrong for the full 7-day TTL.
 
-Rule of thumb: CLI binary swap → nothing to do. Web-layer scoring change → bump
+Rule of thumb: CLI pin bump → nothing to do. Web-layer scoring change → bump
 `cacheEngineVersion` in the same commit.
 
 ### Verify after deploy
@@ -208,20 +209,21 @@ Expect a `cache: redis ... ready` line, and check that its `cli=` value matches
 the hash of the binary actually in the image:
 
 ```bash
-sha256sum bin/scientific-consensus-pp-cli-linux | cut -c1-12
+docker exec corpova sha256sum /app/bin/scientific-consensus-pp-cli | cut -c1-12
 ```
 
-Currently `b659fff65cb9`. A `cli=nohash` instead means the binary could not be
-read — the cache still works, but a binary swap will no longer invalidate it, so
-fix the binary rather than living with it.
+A `cli=nohash` instead means the binary could not be read — the cache still
+works, but a binary swap will no longer invalidate it, so fix the binary rather
+than living with it.
 
 Measured in production on 2026-07-30: **cold 2.25 s, cached hit 0.018 s** (~125x).
 
 ## Troubleshooting
 
 **"Cannot find CLI binary"**
-- Ensure `bin/scientific-consensus-pp-cli-linux` exists before `docker build`.
-- If missing, re-run vendoring + cross-compile: `./vendor-cli.sh`.
+- The image builds the CLI in its `cli-builder` stage; check that stage in the
+  build log and that `CLI_BIN` points at `/app/bin/scientific-consensus-pp-cli`.
+- Inside the running container: `docker exec corpova ./bin/scientific-consensus-pp-cli version`.
 
 **"Port 8090 not accessible"**
 - Render assigns a `PORT` env var (not necessarily 8090).

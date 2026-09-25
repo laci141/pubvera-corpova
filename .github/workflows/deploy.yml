@@ -19,10 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # No LFS checkout: the vendored CLI binary was the only LFS file, and
+      # the image now builds the CLI from a pinned upstream commit.
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          lfs: true
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -114,10 +114,9 @@ jobs:
       contents: read
       packages: write
     steps:
+      # No LFS checkout here either: nothing in the build context needs it.
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          lfs: true
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
