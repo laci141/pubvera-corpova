@@ -53,8 +53,11 @@ ARG PP_LIBRARY_COMMIT
 LABEL org.pubvera.cli.commit=${PP_LIBRARY_COMMIT}
 
 ENV CLI_BIN=/app/bin/scientific-consensus-pp-cli
-# The server binds 0.0.0.0:$PORT when Render sets $PORT; locally it defaults to
-# 127.0.0.1:8090.
+# The server binds $ADDR if set, else 0.0.0.0:$PORT, else 127.0.0.1:8090.
+# On the Hetzner box (pubvera-01) docker-compose.yml sets PORT=8090 and
+# publishes it only on the host's 127.0.0.1:8090, behind Caddy, which
+# terminates HTTPS. The comment here used to say Render sets $PORT; that was
+# true before the move to Hetzner and is not now.
 EXPOSE 8090
 USER app
 CMD ["./server"]
