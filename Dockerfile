@@ -38,7 +38,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/server .
 # Grantvera, Bibliovera and Trialvera. The running image reported 3.24.2 in
 # /etc/alpine-release before this change, so the pin keeps the same base
 # and only stops a silent jump to the next Alpine release.
-FROM alpine:3.24
+FROM alpine:3.99
 # ca-certificates: the CLI makes HTTPS calls to PubMed/OpenAlex/Crossref and,
 # when a BYOK key is supplied, to the LLM providers.
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app
