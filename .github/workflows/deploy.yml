@@ -16,7 +16,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       # No LFS checkout: the vendored CLI binary was the only LFS file, and
@@ -114,7 +114,7 @@ jobs:
   # touch the registry instead.
   build:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       packages: write
