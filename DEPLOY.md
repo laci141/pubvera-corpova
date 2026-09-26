@@ -3,7 +3,7 @@
 ## Local Docker Build (requires Docker installed)
 
 ```bash
-cd /c/Users/LACI/scientific-consensus-web
+cd /c/Users/LACI/pubvera-corpova
 
 # Build the image (multi-stage: builds the CLI from a pinned upstream commit + the web server)
 docker build -t scientific-consensus-web:latest .
@@ -22,48 +22,55 @@ curl http://127.0.0.1:8090/api/consensus -X POST \
 > (`ARG PP_LIBRARY_COMMIT` in the Dockerfile) and stamps it on the image as the
 > label `org.pubvera.cli.commit`. To move to a newer CLI, change that commit.
 
-## Render Deployment
+## Production (pubvera-01)
 
-### Prerequisites
-- GitHub repo pushed: https://github.com/laci141/scientific-consensus-web
-- Render account: https://render.com (free tier OK)
+Corpova runs on the Hetzner VPS `pubvera-01`, not on a hosting platform.
 
-### Step 1: Create Render Web Service
+| property | value |
+|---|---|
+| compose file | `/opt/pubvera/pubvera-corpova/docker-compose.yml` |
+| container | `corpova` |
+| image | `ghcr.io/laci141/pubvera-corpova:latest` (also tagged with the commit SHA) |
+| port | `PORT=8090`, published on the host's `127.0.0.1:8090` only |
+| front | Caddy terminates HTTPS; `/api/*` passes `forward_auth` (auth service on `127.0.0.1:6000`) |
 
-1. Sign in to https://render.com
-2. Click "New +" → "Web Service"
-3. Connect GitHub → Select `scientific-consensus-web`
-4. Name: `scientific-consensus-web` (or custom)
-5. Environment: Docker
-6. Build command: `docker build -t app .` (leave blank for auto-detect)
-7. Start command: (leave blank — Dockerfile CMD runs)
-8. Port: `8090`
-9. Plan: Free (512 MB RAM, spins down after 15 min) or Starter ($7/mo, always on)
-10. No environment variables needed (BYOK via headers)
-11. Click "Create Web Service"
+### How a change reaches production
 
-### Step 2: Wait for Render Deploy
+1. Open a PR. CI runs the `test` job (build, vet, gofmt, race tests, inline
+   JavaScript check) and the `build` job (image build + CLI commit label check).
+   A PR never pushes an image.
+2. Merge to `main`. CI builds the image again and pushes `:latest` and `:<sha>`,
+   with the label `org.opencontainers.image.revision=<sha>`.
+3. Watchtower on `pubvera-01` pulls the new `:latest` within about 5 minutes.
 
-Render clones, builds (`docker build`), and deploys. Watch the "Deploy" tab for logs.
+### Deploy by hand (optional)
 
-URL format: `https://scientific-consensus-web-<random>.onrender.com`
-
-### Step 3: Verify on Render
+On the server, after the `main` CI run is green:
 
 ```bash
-RENDER_URL="https://scientific-consensus-web-<your-random>.onrender.com"
+docker compose -f /opt/pubvera/pubvera-corpova/docker-compose.yml pull
+docker compose -f /opt/pubvera/pubvera-corpova/docker-compose.yml up -d
+```
 
-curl $RENDER_URL/
-curl -X POST $RENDER_URL/api/consensus \
+`up -d` printing `Running` instead of `Started` means the pull found no newer
+image yet: the CI run has not finished. Wait and run both again.
+
+### Verify
+
+```bash
+# 1. The running image is the commit you expect (compare with `git rev-parse HEAD`)
+docker inspect corpova --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+
+# 2. The container is healthy
+docker ps --filter name=corpova --format '{{.Names}} {{.Status}}'
+
+# 3. It answers, from the server itself (bypasses Caddy)
+BASE="http://127.0.0.1:8090"
+curl $BASE/healthz
+curl -X POST $BASE/api/consensus \
   -H "Content-Type: application/json" \
   -d '{"claim":"coffee improves alertness","limit":15}'
 ```
-
-### Step 4: Share
-
-1. Open `$RENDER_URL` in browser
-2. Paste claim + your LLM key (any provider below)
-3. Click a button → results in modal
 
 ## BYOK LLM Providers
 
@@ -95,18 +102,18 @@ opaque token: trimmed, max 128 chars, no whitespace/control characters.
 
 ```bash
 # 1. Heuristic (no key) — CLI result only
-curl -X POST $RENDER_URL/api/consensus \
+curl -X POST $BASE/api/consensus \
   -H "Content-Type: application/json" \
   -d '{"claim":"vitamin D reduces infections","limit":20}'
 
 # 2. DeepSeek synthesis (default model deepseek-chat)
-curl -X POST $RENDER_URL/api/consensus \
+curl -X POST $BASE/api/consensus \
   -H "Content-Type: application/json" \
   -H "X-LLM-Key: sk-your-deepseek-key" \
   -d '{"claim":"vitamin D reduces infections","provider":"deepseek","limit":20}'
 
 # 3. OpenRouter with an explicit (free) model
-curl -X POST $RENDER_URL/api/consensus \
+curl -X POST $BASE/api/consensus \
   -H "Content-Type: application/json" \
   -H "X-LLM-Key: sk-or-your-openrouter-key" \
   -d '{"claim":"vitamin D reduces infections","provider":"openrouter","model":"deepseek/deepseek-chat-v3-0324:free","limit":20}'
@@ -226,10 +233,7 @@ Measured in production on 2026-07-30: **cold 2.25 s, cached hit 0.018 s** (~125x
 - Inside the running container: `docker exec corpova ./bin/scientific-consensus-pp-cli version`.
 
 **"Port 8090 not accessible"**
-- Render assigns a `PORT` env var (not necessarily 8090).
-- The server reads `PORT` and binds `0.0.0.0:$PORT` automatically.
-- Test: `curl $RENDER_URL/healthz` (should return `ok`).
-
-**"Free tier spins down after 15 min idle"**
-- That's normal. Render wakes it on next request (~30s cold start).
-- Upgrade to Starter ($7/mo) for always-on.
+- The server binds `$ADDR` if set, else `0.0.0.0:$PORT`, else `127.0.0.1:8090`.
+  On `pubvera-01` the compose file sets `PORT=8090` and publishes it only on the
+  host's `127.0.0.1:8090`, so it is reachable from the server, not from outside.
+- Test on the server: `curl http://127.0.0.1:8090/healthz` (should return `ok`).
