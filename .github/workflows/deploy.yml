@@ -13,6 +13,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  # Bump this deliberately and read the diff, rather than being bumped by it.
+  # Same version as pubvera-recallis and pubvera-grantvera.
+  GOVULNCHECK_VERSION: v1.8.0
 
 jobs:
   test:
@@ -63,6 +66,15 @@ jobs:
           echo "PASS=$PASS FAIL=$FAIL SKIP=$SKIP"
           echo "PASS=$PASS FAIL=$FAIL SKIP=$SKIP" >> $GITHUB_STEP_SUMMARY
           if [ "$FAIL" != "0" ]; then exit 1; fi
+
+      # govulncheck reports known vulnerabilities in the standard library and in
+      # dependencies, but only for code paths this module actually reaches. It
+      # scans this module only; a CLI built from a pinned upstream commit in the
+      # Dockerfile is a separate binary and is not covered.
+      - name: Vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+          govulncheck ./...
 
       - name: Check inline JavaScript
         run: |
