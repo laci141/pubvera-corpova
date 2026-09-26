@@ -48,7 +48,7 @@ import (
 // cliBinary is the compiled scientific-consensus CLI this server shells out to.
 // Overridable with CLI_BIN. Otherwise it defaults to bin/scientific-consensus-pp-cli
 // (plus a .exe suffix on Windows), so the same code runs against a Windows-built
-// binary locally and a Linux-built binary inside the Docker/Render container.
+// binary locally and a Linux-built binary inside the Docker container.
 func cliBinaryPath() string {
 	if p := strings.TrimSpace(os.Getenv("CLI_BIN")); p != "" {
 		return p
@@ -222,8 +222,8 @@ func main() {
 
 	// Address resolution, in priority order:
 	//   1. $ADDR  — explicit override (host:port), used locally.
-	//   2. $PORT  — Render/Heroku convention; bind 0.0.0.0 so the platform can
-	//      route external traffic to the container.
+	//   2. $PORT  — bind 0.0.0.0:$PORT inside the container; on pubvera-01
+	//      docker-compose.yml sets PORT=8090 and publishes it on 127.0.0.1 only.
 	//   3. default 127.0.0.1:8090 for local development.
 	addr := "127.0.0.1:8090"
 	if a := strings.TrimSpace(os.Getenv("ADDR")); a != "" {
