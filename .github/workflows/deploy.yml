@@ -46,8 +46,13 @@ jobs:
           fi
           echo "gofmt: zero files"
 
+      # A pipeline returns the exit code of its LAST command, so without
+      # pipefail `go test | tee` was green whenever tee succeeded, even with
+      # failing tests; only the Count results step below caught them.
       - name: Test with race detector
-        run: go test ./... -count=1 -race -v 2>&1 | tee test.log
+        run: |
+          set -o pipefail
+          go test ./... -count=1 -race -v 2>&1 | tee test.log
 
       - name: Count results
         if: always()
