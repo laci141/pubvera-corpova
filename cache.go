@@ -56,8 +56,8 @@ import (
 // ===> BUMP IT ("v1" -> "v2" -> ...) IN THE SAME COMMIT AS ANY CHANGE THAT CAN
 // ===> MOVE A SCORE, A STANCE, A VERDICT, A LABEL, OR THE STUDY SET BEHIND THEM.
 //
-// In practice that means: any rebuild of bin/scientific-consensus-pp-cli-linux
-// from a CLI revision that touches the scoring/stance/relevance engine, the
+// In practice that means: any bump of PP_LIBRARY_COMMIT in the Dockerfile to
+// a CLI revision that touches the scoring/stance/relevance engine, the
 // design classifier, the retraction or corpus data, or the shape of the JSON the
 // UI reads. When in doubt, bump — a needless bump costs one cold fetch per
 // query, a missing bump serves verdicts we have already decided are wrong.
@@ -79,14 +79,17 @@ const cacheEngineVersion = "v1"
 //	sc:<engine>:<clihash>:<paramhash>
 //
 // clihash is the first cliHashPrefixLen hex digits of the sha256 of the CLI
-// binary this process actually shells out to (cliBinaryPath()). The binary is
-// committed under bin/, so it is a deterministic build artefact with a stable
-// identity: swapping it — the single most likely way a verdict silently moves —
-// re-keys the entire cache with no human step and no deploy note.
+// binary this process actually shells out to (cliBinaryPath()). The image
+// builds it from the upstream commit pinned in the Dockerfile, so it is a
+// deterministic build artefact with a stable identity: swapping it — the
+// single most likely way a verdict silently moves — re-keys the entire cache
+// with no human step and no deploy note.
 //
-// Measured on this repo's binaries: bin/scientific-consensus-pp-cli.exe hashes
-// to 04b5c539f684 and bin/scientific-consensus-pp-cli-linux to b659fff65cb9, so
-// two builds of the same CLI really do land on different prefixes. The full
+// Measured on the binaries that used to be committed under bin/:
+// scientific-consensus-pp-cli.exe hashed to 04b5c539f684 and
+// scientific-consensus-pp-cli-linux to b659fff65cb9, so two builds of the same
+// CLI really do land on different prefixes. The image built from 58edea3
+// hashes to 16cb7f9ecc39, measured inside the running container. The full
 // sha256 is truncated to 12 hex digits (48 bits) because this is a
 // cache-invalidation tag, not a security boundary: an accidental collision
 // between two builds needs ~2^24 rebuilds to become likely, and the paramhash is
@@ -150,7 +153,7 @@ func cliBinaryHash(path string) (string, error) {
 // initCLIEngineHash computes the clihash once, at startup, and logs the key
 // prefix it produces next to the one it supersedes.
 //
-// Synchronous on purpose, unlike probeAsync. Hashing the committed binary is a
+// Synchronous on purpose, unlike probeAsync. Hashing the CLI binary is a
 // bounded local read — measured at 197ms cold and 56ms warm on a 22.6MB binary —
 // and it must finish before the first request, or that request keys under
 // cliHashUnavailable and strands an entry nothing will ever read again. It also
