@@ -120,6 +120,13 @@ jobs:
           done
           echo "$n inline block(s) parse"
 
+      # go test does not run the node tests in tools/; a phase filter bug once
+      # stayed live because its JS test only ran locally. "|| exit 1" fails the
+      # step on the first failing test without relying on the shell's -e.
+      - name: Run JS tests
+        run: |
+          for t in tools/*_test.js; do echo "== $t"; node "$t" || exit 1; done
+
   # This job runs on pull_request too. It used to be skipped there with a
   # job-level if, which meant a PR never built the image — so the label check
   # below could never fire on a PR. The gate now sits on the two steps that
