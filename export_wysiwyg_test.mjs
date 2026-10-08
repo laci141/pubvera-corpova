@@ -376,10 +376,10 @@ check('S7 compare studies label singular',
     .some(t => t.includes('1 study shown · export covers both claims')), true);
 
 check('S7 evidence pyramid label singular',
-  allMeta(ctx(`renderResult('evidence', { pyramid: [{ design: 'rct', count: 1, pct: 100 }] }, 'heuristic', {})`))
+  allMeta(ctx(`renderResult('evidence', { study_count: 1, pyramid: [{ design: 'rct', count: 1, pct: 100 }] }, 'heuristic', {})`))
     .some(t => t === '1 evidence level'), true);
 check('S7 evidence pyramid label plural',
-  allMeta(ctx(`renderResult('evidence', { pyramid: [{ design: 'rct', count: 1, pct: 50 },
+  allMeta(ctx(`renderResult('evidence', { study_count: 2, pyramid: [{ design: 'rct', count: 1, pct: 50 },
       { design: 'cohort', count: 1, pct: 50 }] }, 'heuristic', {})`))
     .some(t => t === '2 evidence levels'), true);
 
