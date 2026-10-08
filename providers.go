@@ -338,6 +338,61 @@ func compactStudyObject(obj map[string]json.RawMessage, maxStudies int) bool {
 	return changed
 }
 
+// llmScope tells the client how much of the study list the LLM was given, so
+// the UI can say "assessed N of M" from the real numbers instead of a mirrored
+// constant. It is computed from the CLI JSON BEFORE compactForLLM trims it, with
+// the same caps. Mode is "single" (Available/Reviewed at the top level) or
+// "compare" (ClaimA/ClaimB, each capped at MaxPerClaim).
+type llmScope struct {
+	Mode        string         `json:"mode"`
+	MaxPerClaim int            `json:"max_per_claim"`
+	Available   int            `json:"available,omitempty"`
+	Reviewed    int            `json:"reviewed,omitempty"`
+	ClaimA      *llmScopeClaim `json:"claim_a,omitempty"`
+	ClaimB      *llmScopeClaim `json:"claim_b,omitempty"`
+}
+
+type llmScopeClaim struct {
+	Available int `json:"available"`
+	Reviewed  int `json:"reviewed"`
+}
+
+// llmScopeFor reports what compactForLLM will keep of raw. Compare output is
+// detected exactly as compactForLLM does (a top-level claim_a or claim_b key).
+// A missing sub-object or missing all_studies counts as 0/0. Returns nil when
+// raw is not a JSON object.
+func llmScopeFor(raw []byte) *llmScope {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil
+	}
+	// scopeOf counts one object's all_studies against the cap.
+	scopeOf := func(o map[string]json.RawMessage, cap int) llmScopeClaim {
+		var list []json.RawMessage
+		if rawList, ok := o["all_studies"]; ok {
+			_ = json.Unmarshal(rawList, &list)
+		}
+		return llmScopeClaim{Available: len(list), Reviewed: min(len(list), cap)}
+	}
+	_, hasA := obj["claim_a"]
+	_, hasB := obj["claim_b"]
+	if !hasA && !hasB {
+		c := scopeOf(obj, maxStudiesForLLM)
+		return &llmScope{Mode: "single", MaxPerClaim: maxStudiesForLLM, Available: c.Available, Reviewed: c.Reviewed}
+	}
+	sc := &llmScope{Mode: "compare", MaxPerClaim: maxStudiesForCompare}
+	claim := func(k string) *llmScopeClaim {
+		var sub map[string]json.RawMessage
+		if rawSub, ok := obj[k]; ok {
+			_ = json.Unmarshal(rawSub, &sub)
+		}
+		c := scopeOf(sub, maxStudiesForCompare)
+		return &c
+	}
+	sc.ClaimA, sc.ClaimB = claim("claim_a"), claim("claim_b")
+	return sc
+}
+
 // llmStudyCount reports how many all_studies entries survive compaction, for
 // the pre-call log line only: it recounts on compactForLLM's output rather
 // than threading a count out of synthesisPrompt, so no signatures change.

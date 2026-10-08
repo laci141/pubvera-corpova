@@ -109,9 +109,13 @@ type consensusResponse struct {
 	// cannot both be right. It is false whenever they agree and false whenever
 	// there is no synthesis to compare against. DivergenceReason names which
 	// axis fired; it is empty when Divergence is false.
-	Divergence       bool            `json:"divergence"`
-	DivergenceReason string          `json:"divergence_reason,omitempty"`
-	Result           json.RawMessage `json:"result"`
+	Divergence       bool   `json:"divergence"`
+	DivergenceReason string `json:"divergence_reason,omitempty"`
+	// LLMScope reports how many studies the LLM was given (see llmScopeFor). It
+	// is set only together with a successful synthesis, so a heuristic response
+	// never claims a review scope that did not happen.
+	LLMScope *llmScope       `json:"llm_scope,omitempty"`
+	Result   json.RawMessage `json:"result"`
 }
 
 // consensusFacts is the minimal slice of the CLI's consensus JSON the web layer
@@ -510,6 +514,8 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 		} else {
 			resp.LLMSynthesis = syn
 			resp.StanceSource = "llm:" + b.provider
+			// raw is the uncompacted CLI JSON, the same bytes llmSynthesize received.
+			resp.LLMScope = llmScopeFor(raw)
 		}
 	}
 	// Divergence is only defined for the single-claim consensus shape; compare
