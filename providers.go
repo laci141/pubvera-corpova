@@ -66,17 +66,17 @@ type providerSpec struct {
 // openrouter is a meta-provider: its model string selects any hosted model
 // (including :free ones), so the UI treats model as effectively required there.
 var providers = map[string]providerSpec{
-	"anthropic":  {"https://api.anthropic.com/v1", "claude-haiku-4-5", styleAnthropic, false},
-	"openai":     {"https://api.openai.com/v1", "gpt-5-mini", styleOpenAI, false},
+	"anthropic":  {"https://api.anthropic.com/v1", "claude-haiku-5-5", styleAnthropic, false},
+	"openai":     {"https://api.openai.com/v1", "gpt-6-luna", styleOpenAI, false},
 	"gemini":     {"https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash", styleOpenAI, false},
 	"groq":       {"https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", styleOpenAI, false},
 	"mistral":    {"https://api.mistral.ai/v1", "mistral-small-latest", styleOpenAI, false},
-	"deepseek":   {"https://api.deepseek.com", "deepseek-chat", styleOpenAI, false},
+	"deepseek":   {"https://api.deepseek.com", "deepseek-flash", styleOpenAI, false},
 	"zai":        {"https://api.z.ai/api/paas/v4", "glm-5", styleOpenAI, false},
 	"moonshot":   {"https://api.moonshot.ai/v1", "kimi-k2.6", styleOpenAI, false},
 	"qwen":       {"https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "qwen3-max", styleOpenAI, false},
 	"minimax":    {"https://api.minimax.io/v1", "MiniMax-M2.7", styleOpenAI, false},
-	"xai":        {"https://api.x.ai/v1", "grok-4-fast", styleOpenAI, false},
+	"xai":        {"https://api.x.ai/v1", "grok-4.7", styleOpenAI, false},
 	"openrouter": {"https://openrouter.ai/api/v1", "deepseek/deepseek-chat", styleOpenAI, true},
 }
 

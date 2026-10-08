@@ -744,5 +744,15 @@ check('S11 consensus_all renders no claim subheads',
 check('S11 consensus_all group is still "analyzed"',
   [...new Set(consRows11.map(r => r.group))], ['analyzed']);
 
+// MR -- model registry refresh (2026-10-08). Defaults mirror providers.go.
+const MR_DEFAULTS = { anthropic: 'claude-haiku-5-5', openai: 'gpt-6-luna', deepseek: 'deepseek-flash', xai: 'grok-4.7' };
+Object.entries(MR_DEFAULTS).forEach(([p, m]) =>
+  check(`MR providerDefaults.${p} matches the Go default`, ctx(`providerDefaults[${JSON.stringify(p)}]`), m));
+check('MR modelChoices(anthropic) ids', ctx(`modelChoices('anthropic').map(c => c.id)`),
+  ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5']);
+check('MR modelChoices(openai) length', ctx(`modelChoices('openai').length`), 3);
+check('MR modelChoices(deepseek) ids', ctx(`modelChoices('deepseek').map(c => c.id)`),
+  ['deepseek-flash', 'deepseek-v4-pro']);
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);
