@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -224,5 +227,99 @@ func TestGeminiDefaultModelIsTheMeasuredWorkingOne(t *testing.T) {
 	// An empty model override is what the UI actually sends.
 	if got := resolveModel("gemini", ""); got != want {
 		t.Errorf("resolveModel(gemini, \"\") = %q, want %q", got, want)
+	}
+}
+
+// compareJSON builds a compare-shaped CLI output whose claims carry a and b
+// all_studies entries.
+func compareJSON(t *testing.T, a, b int) []byte {
+	t.Helper()
+	out, err := json.Marshal(map[string]any{
+		"claim_a": json.RawMessage(consensusJSON(t, a)),
+		"claim_b": json.RawMessage(consensusJSON(t, b)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestLLMScopeFor(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  []byte
+		want *llmScope
+	}{
+		{"single 40 is capped", consensusJSON(t, 40),
+			&llmScope{Mode: "single", MaxPerClaim: maxStudiesForLLM, Available: 40, Reviewed: maxStudiesForLLM}},
+		{"single 10 is fully reviewed", consensusJSON(t, 10),
+			&llmScope{Mode: "single", MaxPerClaim: maxStudiesForLLM, Available: 10, Reviewed: 10}},
+		{"compare a=30 b=5", compareJSON(t, 30, 5),
+			&llmScope{Mode: "compare", MaxPerClaim: maxStudiesForCompare,
+				ClaimA: &llmScopeClaim{Available: 30, Reviewed: maxStudiesForCompare},
+				ClaimB: &llmScopeClaim{Available: 5, Reviewed: 5}}},
+		{"compare with only claim_a", []byte(`{"claim_a":{"all_studies":[{},{}]}}`),
+			&llmScope{Mode: "compare", MaxPerClaim: maxStudiesForCompare,
+				ClaimA: &llmScopeClaim{Available: 2, Reviewed: 2},
+				ClaimB: &llmScopeClaim{}}},
+		{"invalid JSON", []byte(`{not json`), nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := llmScopeFor(tc.raw)
+			gotJSON, _ := json.Marshal(got)
+			wantJSON, _ := json.Marshal(tc.want)
+			if (got == nil) != (tc.want == nil) || !bytes.Equal(gotJSON, wantJSON) {
+				t.Errorf("llmScopeFor = %s, want %s", gotJSON, wantJSON)
+			}
+		})
+	}
+}
+
+// TestHandlerLLMScopeOnlyOnLLMPath: llm_scope describes what the LLM saw, so it
+// must be on a successful synthesis and absent from a heuristic response.
+func TestHandlerLLMScopeOnlyOnLLMPath(t *testing.T) {
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"stance\":\"supports\",\"confidence\":0.9,\"reasoning\":\"ok\",\"key_evidence\":[]}"}}]}`))
+	}))
+	defer llm.Close()
+	useFakeProvider(t, "testprovider", llm.URL)
+	buildSlowStubCLI(t, filepath.Join(t.TempDir(), "runs.txt"), 0)
+	useCache(t, nil)
+
+	scopeOf := func(body string) (string, json.RawMessage) {
+		var m struct {
+			StanceSource string          `json:"stance_source"`
+			LLMScope     json.RawMessage `json:"llm_scope"`
+		}
+		if err := json.Unmarshal([]byte(body), &m); err != nil {
+			t.Fatalf("response is not valid JSON: %v", err)
+		}
+		return m.StanceSource, m.LLMScope
+	}
+
+	status, body := postConsensusWithKey(t, "scope llm claim", "testprovider", "some-key")
+	if status != http.StatusOK {
+		t.Fatalf("llm path: status %d body %s", status, body)
+	}
+	src, scope := scopeOf(body)
+	if src != "llm:testprovider" {
+		t.Fatalf("stance_source = %q, want llm:testprovider", src)
+	}
+	if !strings.Contains(string(scope), `"mode":"single"`) || !strings.Contains(string(scope), fmt.Sprintf(`"max_per_claim":%d`, maxStudiesForLLM)) {
+		t.Errorf("llm path: llm_scope = %s, want single mode with max_per_claim %d", scope, maxStudiesForLLM)
+	}
+
+	status, body = postConsensus(t, "scope heuristic claim")
+	if status != http.StatusOK {
+		t.Fatalf("heuristic path: status %d body %s", status, body)
+	}
+	src, scope = scopeOf(body)
+	if src != "heuristic" {
+		t.Fatalf("stance_source = %q, want heuristic", src)
+	}
+	if scope != nil {
+		t.Errorf("heuristic path: llm_scope = %s, want absent", scope)
 	}
 }

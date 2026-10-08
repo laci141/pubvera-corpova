@@ -393,6 +393,28 @@ check('C04 ai scope note hidden when the AI filter did not run',
 check('C04 ai scope note hidden at exactly the cap',
   ctx(`renderResult('consensus', ${scopeFixture(25)}, 'llm:deepseek', {})`).includes('ai-scope-note'), false);
 
+const cmpFixture = `{ claim_a: { claim: 'A', verdict: 'v', consensus_score: 1, confidence: 1, evidence_strength: 's',
+    apex_design: 'rct', study_count: 30, stance_method: 'm', top_supporting: [], top_refuting: [] },
+  claim_b: { claim: 'B', verdict: 'v', consensus_score: 1, confidence: 1, evidence_strength: 's',
+    apex_design: 'rct', study_count: 5, stance_method: 'm', top_supporting: [], top_refuting: [] } }`;
+const cmpScope = `{ llm_scope: { mode: 'compare', max_per_claim: 12,
+    claim_a: { available: 30, reviewed: 12 }, claim_b: { available: 5, reviewed: 5 } } }`;
+const c04bSingle = (avail, rev) => ctx(`renderResult('consensus', ${scopeFixture(99)}, 'llm:deepseek',
+  { llm_scope: { mode: 'single', max_per_claim: 25, available: ${avail}, reviewed: ${rev} } })`);
+check('C04b single llm_scope 25 of 40 -> note with real numbers',
+  c04bSingle(40, 25).includes('25 of 40'), true);
+check('C04b single llm_scope fully reviewed (10/10) -> no note',
+  c04bSingle(10, 10).includes('ai-scope-note'), false);
+{
+  const html = ctx(`renderResult('compare', ${cmpFixture}, 'llm:deepseek', ${cmpScope})`);
+  check('C04b compare llm: exactly one ai-scope-note (claim A only)',
+    (html.match(/class="ai-scope-note"/g) || []).length, 1);
+  check('C04b compare llm: note names Claim A and 12 of 30',
+    html.includes('Claim A') && html.includes('12 of 30'), true);
+}
+check('C04b compare heuristic with the same scope -> no note',
+  ctx(`renderResult('compare', ${cmpFixture}, 'heuristic', ${cmpScope})`).includes('class="ai-scope-note"'), false);
+
 check('S7 gaps findings label singular',
   allMeta(ctx(`renderResult('gaps', { query: 'q', analyzed: 1, findings: [{ kind: 'gap', detail: 'd' }] }, 'heuristic', {})`))
     .some(t => t === '1 finding'), true);
