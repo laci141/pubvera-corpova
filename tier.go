@@ -20,7 +20,7 @@ const (
 // round trip in the request path.
 const (
 	freeTierProvider = "deepseek"
-	freeTierModel    = "deepseek-chat"
+	freeTierModel    = "deepseek-flash"
 )
 
 // llmWillRun reports whether this request will actually reach the provider.
@@ -113,7 +113,7 @@ func tierRefusalMessage(b byok) string {
 // true when the request may proceed; on refusal it writes the 403 response and
 // returns false so the caller stops.
 //
-// The refusal is explicit rather than a silent downgrade to deepseek-chat: the
+// The refusal is explicit rather than a silent downgrade to deepseek-flash: the
 // caller picked a model, and quietly answering with a different one would hide
 // both the plan limit and the fact that the answer came from elsewhere.
 func enforceTierGate(w http.ResponseWriter, r *http.Request, b byok, endpoint string) bool {

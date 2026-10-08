@@ -1386,17 +1386,17 @@
     // and shown as a hint. Users can override with any model id (openrouter
     // effectively requires one, since it routes to any hosted model).
     const providerDefaults = {
-      anthropic: 'claude-haiku-4-5',
-      openai: 'gpt-5-mini',
+      anthropic: 'claude-haiku-5-5',
+      openai: 'gpt-6-luna',
       gemini: 'gemini-3.5-flash',
       groq: 'llama-3.3-70b-versatile',
       mistral: 'mistral-small-latest',
-      deepseek: 'deepseek-chat',
+      deepseek: 'deepseek-flash',
       zai: 'glm-5',
       moonshot: 'kimi-k2.6',
       qwen: 'qwen3-max',
       minimax: 'MiniMax-M2.7',
-      xai: 'grok-4-fast',
+      xai: 'grok-4.7',
       openrouter: 'openrouter/free'
     };
 
@@ -1410,8 +1410,18 @@
     // A provider absent from this map falls back to its single default above.
     const providerModelChoices = {
       anthropic: [
-        { id: 'claude-haiku-4-5', note: 'faster, cheaper' },
-        { id: 'claude-sonnet-4-6', note: 'more thorough, higher cost' }
+        { id: 'claude-haiku-5-5', note: 'faster, cheaper' },
+        { id: 'claude-sonnet-5-5', note: 'more thorough, higher cost' },
+        { id: 'claude-opus-5-5', note: 'most capable, highest cost' }
+      ],
+      openai: [
+        { id: 'gpt-6-luna', note: 'cheapest, high volume' },
+        { id: 'gpt-6.1-sol', note: 'balanced' },
+        { id: 'gpt-6-astra', note: 'most capable, highest cost' }
+      ],
+      deepseek: [
+        { id: 'deepseek-flash', note: 'fast + cheap (V4.1 Flash)' },
+        { id: 'deepseek-v4-pro', note: 'more thorough (V4 Pro)' }
       ],
       // GEMINI ORDER AND NOTES — measured 2026-09-02, not marketing copy.
       // The same claim run through all three flash models with a live key:
@@ -1452,7 +1462,7 @@
       // The field is left EMPTY rather than prefilled with the default.
       //
       // A datalist filters its suggestions against whatever the field already
-      // holds, so prefilling "claude-haiku-4-5" hid claude-sonnet-4-6 from the
+      // holds, so prefilling "claude-haiku-5-5" hid claude-sonnet-5-5 from the
       // list: the one model a user might want to switch to was the one they
       // could not see without clearing the field first. Empty shows the whole
       // list on the first click.

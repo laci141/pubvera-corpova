@@ -323,3 +323,24 @@ func TestHandlerLLMScopeOnlyOnLLMPath(t *testing.T) {
 		t.Errorf("heuristic path: llm_scope = %s, want absent", scope)
 	}
 }
+
+// TestModelRegistryDefaults pins the 2026-10-08 registry refresh. Keep it in
+// step with providerDefaults in index.html (the MR checks in
+// export_wysiwyg_test.mjs assert the same four values).
+func TestModelRegistryDefaults(t *testing.T) {
+	want := map[string]string{
+		"anthropic": "claude-haiku-5-5",
+		"openai":    "gpt-6-luna",
+		"deepseek":  "deepseek-flash",
+		"xai":       "grok-4.7",
+	}
+	for provider, model := range want {
+		if got := providers[provider].DefaultModel; got != model {
+			t.Errorf("providers[%s].DefaultModel = %q, want %q", provider, got, model)
+		}
+	}
+	// openrouter takes an OpenRouter slug, not a DeepSeek API id.
+	if got := providers["openrouter"].DefaultModel; got != "deepseek/deepseek-chat" {
+		t.Errorf("providers[openrouter].DefaultModel = %q, want unchanged", got)
+	}
+}

@@ -25,10 +25,10 @@ func TestTierAllowsModel(t *testing.T) {
 		// free-tier tester pasted his own Gemini key and was refused, which is
 		// what surfaced it. The gate exists to protect the operator's spend,
 		// and a caller's own key spends nothing of the operator's.
-		{"free with the one permitted model", "free", "deepseek", "k", "deepseek-chat", false, "consensus", true},
+		{"free with the one permitted model", "free", "deepseek", "k", "deepseek-flash", false, "consensus", true},
 		{"free explicitly picking another model", "free", "anthropic", "k", "claude-sonnet-4-6", false, "consensus", true},
 		// Empty model is not "no model": it resolves to the provider default,
-		// which on anthropic is claude-haiku-4-5. Allowed now, but resolveModel
+		// which on anthropic is claude-haiku-5-5. Allowed now, but resolveModel
 		// still has to do its job — see TestResolveModel.
 		{"free with empty model on anthropic", "free", "anthropic", "k", "", false, "consensus", true},
 		{"free with empty model on deepseek", "free", "deepseek", "k", "", false, "consensus", true},
@@ -52,7 +52,7 @@ func TestTierAllowsModel(t *testing.T) {
 		// ---- the server's own key: the operator pays, so the pin applies ----
 		// This is now the ONLY reason the gate ever refuses. The tier does not
 		// decide; whose money it is decides.
-		{"server key with the permitted model", "trial", "deepseek", "k", "deepseek-chat", true, "consensus", true},
+		{"server key with the permitted model", "trial", "deepseek", "k", "deepseek-flash", true, "consensus", true},
 		{"server key with an empty model", "trial", "deepseek", "k", "", true, "consensus", true},
 		{"server key asked for sonnet", "trial", "deepseek", "k", "claude-sonnet-4-6", true, "consensus", false},
 		{"server key asked for deepseek-reasoner", "trial", "deepseek", "k", "deepseek-reasoner", true, "consensus", false},
@@ -69,7 +69,7 @@ func TestTierAllowsModel(t *testing.T) {
 		// ---- callers spending their OWN key: not pinned ----
 		// Their money, their choice — the same freedom on every tier.
 		{"trial with own key on sonnet", "trial", "anthropic", "k", "claude-sonnet-4-6", false, "consensus", true},
-		{"trial with own key on deepseek", "trial", "deepseek", "k", "deepseek-chat", false, "consensus", true},
+		{"trial with own key on deepseek", "trial", "deepseek", "k", "deepseek-flash", false, "consensus", true},
 		{"trial with own key, empty model", "trial", "openai", "k", "", false, "consensus", true},
 		{"free with own key on gemini", "free", "gemini", "k", "gemini-3.5-flash", false, "consensus", true},
 		{"free with own key, empty model on gemini", "free", "gemini", "k", "", false, "consensus", true},
@@ -120,8 +120,8 @@ func TestResolveModel(t *testing.T) {
 		want     string
 	}{
 		{"override wins", "anthropic", "claude-sonnet-4-6", "claude-sonnet-4-6"},
-		{"empty falls back to the provider default", "anthropic", "", "claude-haiku-4-5"},
-		{"deepseek default", "deepseek", "", "deepseek-chat"},
+		{"empty falls back to the provider default", "anthropic", "", "claude-haiku-5-5"},
+		{"deepseek default", "deepseek", "", "deepseek-flash"},
 		{"unknown provider has no default", "nope", "", ""},
 		{"no provider at all", "", "", ""},
 	}
@@ -145,8 +145,8 @@ func TestResolveModel(t *testing.T) {
 // because tierRefusalMessage still returns it, and a test that stops covering a
 // live branch of a live function is worse than one covering a quiet branch.
 const (
-	freeRefusal      = "The free plan can only use deepseek-chat. Upgrade to Pro to use other models."
-	serverKeyRefusal = "The included trial key only runs deepseek-chat. Enter your own API key to use other models."
+	freeRefusal      = "The free plan can only use deepseek-flash. Upgrade to Pro to use other models."
+	serverKeyRefusal = "The included trial key only runs deepseek-flash. Enter your own API key to use other models."
 )
 
 func TestTierRefusalMessage(t *testing.T) {
@@ -167,7 +167,7 @@ func TestEnforceTierGate(t *testing.T) {
 		wantOK     bool
 		wantMsg    string // only checked when wantOK is false
 	}{
-		{"free with deepseek-chat", "free", byok{provider: "deepseek", key: "k", model: "deepseek-chat"}, "consensus", true, ""},
+		{"free with deepseek-flash", "free", byok{provider: "deepseek", key: "k", model: "deepseek-flash"}, "consensus", true, ""},
 		// Own key, any model, any tier: allowed since 2026-09-04.
 		{"free with claude-sonnet-4-6 on its own key", "free", byok{provider: "anthropic", key: "k", model: "claude-sonnet-4-6"}, "consensus", true, ""},
 		{"free putting a foreign model on deepseek", "free", byok{provider: "deepseek", key: "k", model: "claude-sonnet-4-6"}, "consensus", true, ""},
@@ -185,7 +185,7 @@ func TestEnforceTierGate(t *testing.T) {
 
 		// The server's key is the only thing that still refuses, with its own
 		// wording. This block is now the whole of the 403 path.
-		{"server key with deepseek-chat", "trial", byok{provider: "deepseek", key: "k", model: "deepseek-chat", serverKey: true}, "consensus", true, ""},
+		{"server key with deepseek-flash", "trial", byok{provider: "deepseek", key: "k", model: "deepseek-flash", serverKey: true}, "consensus", true, ""},
 		{"server key asked for sonnet", "trial", byok{provider: "deepseek", key: "k", model: "claude-sonnet-4-6", serverKey: true}, "consensus", false, serverKeyRefusal},
 		{"server key on free tier asked for sonnet", "free", byok{provider: "deepseek", key: "k", model: "claude-sonnet-4-6", serverKey: true}, "consensus", false, serverKeyRefusal},
 		{"server key on gaps", "trial", byok{provider: "deepseek", key: "k", model: "claude-sonnet-4-6", serverKey: true}, "gaps", true, ""},
@@ -233,7 +233,7 @@ func TestEnforceTierGate(t *testing.T) {
 //
 // This is the load-bearing test now that tierAllowsModel no longer looks at the
 // tier. If a free signup ever reached the fallback, the pin would still hold
-// the model to deepseek-chat, but the operator would be paying for it.
+// the model to deepseek-flash, but the operator would be paying for it.
 func TestExtractBYOKServerKey(t *testing.T) {
 	const serverSecret = "sk-server-side-secret"
 
