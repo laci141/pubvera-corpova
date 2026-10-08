@@ -2657,8 +2657,8 @@
     // 25 mirrors maxStudiesForLLM in providers.go. If that constant changes,
     // change it here too — there is no field in the response carrying it.
     const AI_REVIEW_CAP = 25;
-    function aiScopeNote(result) {
-      if (!filterRan(result)) return '';
+    function aiScopeNote(result, stanceSource) {
+      if (!filterRan(stanceSource)) return '';
       const total = Number(result && result.study_count) || 0;
       if (total <= AI_REVIEW_CAP) return '';
       return `<div class="ai-scope-note">⚠️ The AI synthesis assessed ${AI_REVIEW_CAP} of ${num(total)} scored studies (the top-ranked subset). Studies ranked below ${AI_REVIEW_CAP} were neither included nor excluded by the AI filter — they were never reviewed.</div>`;
@@ -2825,7 +2825,7 @@
             <p><strong>Studies Analyzed:</strong> ${num(result.study_count)}${
                  result.relevant_count == null ? '' : ` &nbsp;·&nbsp; <strong>Relevant:</strong> ${num(result.relevant_count)}`}${
                  result.retracted_excluded ? ` &nbsp;·&nbsp; <strong>Retracted (excluded):</strong> ${num(result.retracted_excluded)}` : ''}</p>
-            ${aiScopeNote(result)}
+            ${aiScopeNote(result, stanceSource)}
             <p><strong>Supporting / Refuting / Mixed / Inconclusive:</strong>
                ${num(result.supporting)} / ${num(result.refuting)} / ${num(result.mixed)} / ${num(result.inconclusive)}</p>
             <p><strong>Method:</strong> ${esc(result.stance_method)} &nbsp;·&nbsp; <strong>Requested:</strong> ${esc(stanceSource)}</p>

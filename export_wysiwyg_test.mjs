@@ -383,6 +383,16 @@ check('S7 evidence pyramid label plural',
       { design: 'cohort', count: 1, pct: 50 }] }, 'heuristic', {})`))
     .some(t => t === '2 evidence levels'), true);
 
+const scopeFixture = n => `{ claim: 'c', verdict: 'v', consensus_score: 1, confidence: 1,
+    evidence_strength: 's', apex_design: 'rct', study_count: ${n}, stance_method: 'm',
+    top_supporting: [${oneJSON}], top_refuting: [] }`;
+check('C04 ai scope note shown when AI filtered more than the cap',
+  ctx(`renderResult('consensus', ${scopeFixture(40)}, 'llm:deepseek', {})`).includes('ai-scope-note'), true);
+check('C04 ai scope note hidden when the AI filter did not run',
+  ctx(`renderResult('consensus', ${scopeFixture(40)}, 'heuristic', {})`).includes('ai-scope-note'), false);
+check('C04 ai scope note hidden at exactly the cap',
+  ctx(`renderResult('consensus', ${scopeFixture(25)}, 'llm:deepseek', {})`).includes('ai-scope-note'), false);
+
 check('S7 gaps findings label singular',
   allMeta(ctx(`renderResult('gaps', { query: 'q', analyzed: 1, findings: [{ kind: 'gap', detail: 'd' }] }, 'heuristic', {})`))
     .some(t => t === '1 finding'), true);
