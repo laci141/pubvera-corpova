@@ -479,14 +479,22 @@ type responseFormat struct {
 	Type string `json:"type"`
 }
 
+// thinkingParam is DeepSeek's OpenAI-format thinking toggle. Pointer-typed in
+// openAIRequest so the field is absent for every other provider.
+type thinkingParam struct {
+	Type string `json:"type"`
+}
+
 type openAIRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
 	// A pointer, so omitempty leaves the field out entirely for providers not
 	// in deterministicProviders. A plain float64 would serialise as 0 for
 	// everyone and send the very value some of them refuse.
-	Temperature    *float64        `json:"temperature,omitempty"`
-	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+	Temperature     *float64        `json:"temperature,omitempty"`
+	ResponseFormat  *responseFormat `json:"response_format,omitempty"`
+	Thinking        *thinkingParam  `json:"thinking,omitempty"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
 }
 
 type anthropicRequest struct {
@@ -535,6 +543,20 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		reqPayload := openAIRequest{Model: model, Temperature: temp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
 		if spec.JSONFormat {
 			reqPayload.ResponseFormat = &responseFormat{Type: "json_object"}
+		}
+		// DeepSeek models default to thinking mode; measured 2026-10-08, live
+		// deepseek-flash and deepseek-v4-pro calls hit llmTimeout ("context
+		// deadline exceeded"). The DeepSeek docs toggle it off with this field.
+		// Only provider "deepseek": openrouter (even deepseek/* slugs) and the
+		// rest must not receive it.
+		if provider == "deepseek" {
+			reqPayload.Thinking = &thinkingParam{Type: "disabled"}
+		}
+		// Gemini 3.x cannot turn reasoning off on the OpenAI-compat endpoint
+		// (Google docs), but reasoning_effort "low" is accepted. Gemini only,
+		// and never combined with thinking_config.
+		if provider == "gemini" {
+			reqPayload.ReasoningEffort = "low"
 		}
 		payload = reqPayload
 	}

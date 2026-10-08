@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -342,5 +344,86 @@ func TestModelRegistryDefaults(t *testing.T) {
 	// openrouter takes an OpenRouter slug, not a DeepSeek API id.
 	if got := providers["openrouter"].DefaultModel; got != "deepseek/deepseek-chat" {
 		t.Errorf("providers[openrouter].DefaultModel = %q, want unchanged", got)
+	}
+}
+
+// TestThinkingDisabledOnlyForDeepseek captures the outgoing request body.
+// DeepSeek defaults to thinking mode and the measured live calls ran into
+// llmTimeout, so deepseek must send thinking disabled; no other provider
+// (openrouter included, even with a deepseek/* slug) may carry the field.
+func TestThinkingDisabledOnlyForDeepseek(t *testing.T) {
+	tests := []struct {
+		provider string
+		model    string
+		want     bool
+	}{
+		{"deepseek", "", true},
+		{"openai", "", false},
+		{"openrouter", "deepseek/deepseek-chat", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.provider, func(t *testing.T) {
+			var got string
+			llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				got = string(b)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"stance\":\"supports\",\"confidence\":0.9,\"reasoning\":\"ok\",\"key_evidence\":[]}"}}]}`))
+			}))
+			defer llm.Close()
+			useFakeProvider(t, tc.provider, llm.URL)
+			if _, err := llmSynthesize(context.Background(), tc.provider, "k", tc.model, "consensus", []string{"c"}, consensusJSON(t, 1)); err != nil {
+				t.Fatalf("llmSynthesize: %v", err)
+			}
+			has := strings.Contains(got, `"thinking":{"type":"disabled"}`)
+			if tc.want && !has {
+				t.Errorf("%s body lacks thinking disabled: %s", tc.provider, got)
+			}
+			if !tc.want && strings.Contains(got, `"thinking"`) {
+				t.Errorf("%s body must have no thinking key: %s", tc.provider, got)
+			}
+		})
+	}
+}
+
+// TestReasoningEffortOnlyForGemini: Gemini 3.x cannot disable thinking on the
+// OpenAI-compat endpoint, but reasoning_effort "low" is accepted. Only gemini
+// may carry the key.
+func TestReasoningEffortOnlyForGemini(t *testing.T) {
+	tests := []struct {
+		provider string
+		model    string
+		want     bool
+	}{
+		{"gemini", "", true},
+		{"deepseek", "", false},
+		{"openai", "", false},
+		{"openrouter", "deepseek/deepseek-chat", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.provider, func(t *testing.T) {
+			var got string
+			llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				got = string(b)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"stance\":\"supports\",\"confidence\":0.9,\"reasoning\":\"ok\",\"key_evidence\":[]}"}}]}`))
+			}))
+			defer llm.Close()
+			useFakeProvider(t, tc.provider, llm.URL)
+			if _, err := llmSynthesize(context.Background(), tc.provider, "k", tc.model, "consensus", []string{"c"}, consensusJSON(t, 1)); err != nil {
+				t.Fatalf("llmSynthesize: %v", err)
+			}
+			has := strings.Contains(got, `"reasoning_effort":"low"`)
+			if tc.want && !has {
+				t.Errorf("%s body lacks reasoning_effort low: %s", tc.provider, got)
+			}
+			if !tc.want && strings.Contains(got, `"reasoning_effort"`) {
+				t.Errorf("%s body must have no reasoning_effort key: %s", tc.provider, got)
+			}
+			if strings.Contains(got, "thinking_config") {
+				t.Errorf("%s body must not carry thinking_config: %s", tc.provider, got)
+			}
+		})
 	}
 }
