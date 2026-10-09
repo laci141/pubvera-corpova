@@ -82,7 +82,7 @@ call fails you still get the full heuristic result plus a redacted `llm_error`.
 
 | provider | base_url | default model | get a key |
 |---|---|---|---|
-| `anthropic` | api.anthropic.com/v1 (native Messages API) | claude-haiku-4-5 | console.anthropic.com |
+| `anthropic` | api.anthropic.com/v1 (native Messages API) | claude-haiku-5-5 | console.anthropic.com |
 | `openai` | api.openai.com/v1 | gpt-5-mini | platform.openai.com |
 | `gemini` | generativelanguage.googleapis.com/v1beta/openai | gemini-2.5-flash | aistudio.google.com/apikey |
 | `groq` | api.groq.com/openai/v1 | llama-3.3-70b-versatile | console.groq.com |

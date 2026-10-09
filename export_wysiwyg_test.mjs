@@ -750,6 +750,7 @@ Object.entries(MR_DEFAULTS).forEach(([p, m]) =>
   check(`MR providerDefaults.${p} matches the Go default`, ctx(`providerDefaults[${JSON.stringify(p)}]`), m));
 check('MR modelChoices(anthropic) ids', ctx(`modelChoices('anthropic').map(c => c.id)`),
   ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5']);
+check('MR modelChoices(gemini) includes gemini-3.8-flash', ctx(`modelChoices('gemini').map(c => c.id).includes('gemini-3.8-flash')`), true);
 check('MR modelChoices(openai) length', ctx(`modelChoices('openai').length`), 3);
 check('MR modelChoices(deepseek) ids', ctx(`modelChoices('deepseek').map(c => c.id)`),
   ['deepseek-flash', 'deepseek-v4-pro']);
