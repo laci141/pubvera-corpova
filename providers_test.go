@@ -427,3 +427,58 @@ func TestReasoningEffortOnlyForGemini(t *testing.T) {
 		})
 	}
 }
+
+// TestAnthropicTemperatureOmittedForClaude55: the Claude 5.5 family answers
+// HTTP 400 "`temperature` is deprecated for this model", so the key must be
+// absent from the body (not 0). Older Anthropic models and other providers
+// keep sending it.
+func TestAnthropicTemperatureOmittedForClaude55(t *testing.T) {
+	tests := []struct {
+		provider string
+		model    string
+		want     bool
+	}{
+		{"anthropic", "claude-haiku-5-5", false},
+		{"anthropic", "claude-sonnet-5-5", false},
+		{"anthropic", "claude-opus-5-5", false},
+		{"anthropic", "claude-haiku-4-5", true},
+		{"deepseek", "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.provider+"/"+tc.model, func(t *testing.T) {
+			var got string
+			llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				got = string(b)
+				w.Header().Set("Content-Type", "application/json")
+				if tc.provider == "anthropic" {
+					_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"{\"stance\":\"supports\",\"confidence\":0.9,\"reasoning\":\"ok\",\"key_evidence\":[]}"}]}`))
+					return
+				}
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"stance\":\"supports\",\"confidence\":0.9,\"reasoning\":\"ok\",\"key_evidence\":[]}"}}]}`))
+			}))
+			defer llm.Close()
+			if tc.provider == "anthropic" {
+				prev := providers["anthropic"]
+				providers["anthropic"] = providerSpec{BaseURL: llm.URL, DefaultModel: prev.DefaultModel, Style: styleAnthropic}
+				t.Cleanup(func() { providers["anthropic"] = prev })
+			} else {
+				useFakeProvider(t, tc.provider, llm.URL)
+			}
+			if _, err := llmSynthesize(context.Background(), tc.provider, "k", tc.model, "consensus", []string{"c"}, consensusJSON(t, 1)); err != nil {
+				t.Fatalf("llmSynthesize: %v", err)
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(got), &body); err != nil {
+				t.Fatalf("body is not JSON: %v: %s", err, got)
+			}
+			raw, has := body["temperature"]
+			if has != tc.want {
+				t.Fatalf("%s/%s: temperature present=%v, want %v: %s", tc.provider, tc.model, has, tc.want, got)
+			}
+			if tc.want && string(raw) != "0" {
+				t.Errorf("temperature = %s, want 0", raw)
+			}
+		})
+	}
+}

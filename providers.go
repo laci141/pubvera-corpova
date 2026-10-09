@@ -504,6 +504,14 @@ type anthropicRequest struct {
 	Messages    []chatMessage `json:"messages"`
 }
 
+// anthropicSupportsTemperature reports whether the model still accepts the
+// temperature parameter. The Claude 5.5 family (ids containing "-5-5") answers
+// HTTP 400 "`temperature` is deprecated for this model", so the field must be
+// absent from its request body; older models keep receiving it.
+func anthropicSupportsTemperature(model string) bool {
+	return !strings.Contains(model, "-5-5")
+}
+
 // llmSynthesize makes one chat call to the selected provider and parses the
 // structured synthesis. Every returned error is already safe to expose: key
 // redacted, control bytes stripped, body truncated.
@@ -537,7 +545,11 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		// with stop_reason "max_tokens", parseSynthesis found a stray closing
 		// brace, and the whole synthesis was discarded as unparseable. This is a
 		// ceiling, not a target — a short answer still costs only what it uses.
-		payload = anthropicRequest{Model: model, MaxTokens: 4096, Temperature: temp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
+		anthropicTemp := temp
+		if !anthropicSupportsTemperature(model) {
+			anthropicTemp = nil
+		}
+		payload = anthropicRequest{Model: model, MaxTokens: 4096, Temperature: anthropicTemp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
 	default:
 		url = spec.BaseURL + "/chat/completions"
 		reqPayload := openAIRequest{Model: model, Temperature: temp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
