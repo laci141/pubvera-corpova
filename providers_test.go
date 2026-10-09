@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -478,6 +479,72 @@ func TestAnthropicTemperatureOmittedForClaude55(t *testing.T) {
 			}
 			if tc.want && string(raw) != "0" {
 				t.Errorf("temperature = %s, want 0", raw)
+			}
+		})
+	}
+}
+
+// anthropicBody builds a wire response: blocks are raw JSON content blocks.
+func anthropicBody(stop string, in, out int, blocks ...string) string {
+	return fmt.Sprintf(`{"content":[%s],"stop_reason":%q,"usage":{"input_tokens":%d,"output_tokens":%d}}`,
+		strings.Join(blocks, ","), stop, in, out)
+}
+
+func textBlock(s string) string {
+	b, _ := json.Marshal(map[string]string{"type": "text", "text": s})
+	return string(b)
+}
+
+// TestAnthropicParsing covers response shapes seen from Claude models: a
+// leading non-text block, fenced JSON, prose around the object, text split over
+// several blocks, and unusable output (which must still report usage, because
+// the provider was paid).
+func TestAnthropicParsing(t *testing.T) {
+	const obj = `{"stance":"supports","confidence":0.8,"reasoning":"r","key_evidence":[]}`
+	tests := []struct {
+		name    string
+		body    string
+		wantOK  bool
+		wantIn  int
+		wantOut int
+	}{
+		{"thinking then text", anthropicBody("end_turn", 11, 22, `{"type":"thinking","thinking":"hmm {x}"}`, textBlock(obj)), true, 11, 22},
+		{"fenced json", anthropicBody("end_turn", 1, 2, textBlock("```json\n"+obj+"\n```")), true, 1, 2},
+		{"prose around", anthropicBody("end_turn", 1, 2, textBlock("Here you go: "+obj+" Hope that helps {not json}.")), true, 1, 2},
+		{"split over text blocks", anthropicBody("end_turn", 1, 2, textBlock(obj[:20]), `{"type":"redacted_thinking","data":"x"}`, textBlock(obj[20:])), true, 1, 2},
+		{"invalid output keeps usage", anthropicBody("max_tokens", 123, 456, textBlock(`{"stance":"supports","confidence":`)), false, 123, 456},
+		{"no object keeps usage", anthropicBody("end_turn", 7, 9, textBlock("I cannot do that.")), false, 7, 9},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer llm.Close()
+			prev := providers["anthropic"]
+			providers["anthropic"] = providerSpec{BaseURL: llm.URL, DefaultModel: prev.DefaultModel, Style: styleAnthropic}
+			t.Cleanup(func() { providers["anthropic"] = prev })
+
+			syn, err := llmSynthesize(context.Background(), "anthropic", "k", "claude-haiku-5-5", "consensus", []string{"c"}, consensusJSON(t, 1))
+			if tc.wantOK {
+				if err != nil {
+					t.Fatalf("want parsed OK, got %v", err)
+				}
+				if syn.Stance != "supports" || syn.InputTokens != tc.wantIn || syn.OutputTokens != tc.wantOut {
+					t.Errorf("syn = %+v", syn)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "unparseable synthesis") {
+				t.Fatalf("want badshape error, got %v", err)
+			}
+			var bs *llmBadShapeError
+			if !errors.As(err, &bs) {
+				t.Fatalf("error carries no usage: %T %v", err, err)
+			}
+			if bs.Model != "claude-haiku-5-5" || bs.Usage.InputTokens != tc.wantIn || bs.Usage.OutputTokens != tc.wantOut {
+				t.Errorf("usage = %q %+v, want claude-haiku-5-5 in=%d out=%d", bs.Model, bs.Usage, tc.wantIn, tc.wantOut)
 			}
 		})
 	}

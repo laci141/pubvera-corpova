@@ -631,24 +631,26 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 	text, err := extractChatText(spec.Style, respBody)
 	if err != nil {
 		msg := sanitizeLLMError(err.Error(), key)
-		log.Printf("llm: badshape provider=%s elapsed_ms=%d resp_bytes=%d err=%s",
-			provider, time.Since(start).Milliseconds(), len(respBody), truncate(msg, 300))
+		log.Printf("llm: badshape provider=%s elapsed_ms=%d resp_bytes=%d%s err=%s",
+			provider, time.Since(start).Milliseconds(), len(respBody), anthropicLogFields(spec.Style, respBody), truncate(msg, 300))
 		return nil, errors.New(msg)
 	}
+	usage := extractUsage(spec.Style, respBody)
 	syn, err := parseSynthesis(text)
 	if err != nil {
 		msg := "unparseable synthesis: " + sanitizeLLMError(err.Error(), key)
-		log.Printf("llm: badshape provider=%s elapsed_ms=%d resp_bytes=%d err=%s",
-			provider, time.Since(start).Milliseconds(), len(respBody), truncate(msg, 300))
-		return nil, errors.New(msg)
+		log.Printf("llm: badshape provider=%s elapsed_ms=%d resp_bytes=%d in_tok=%d out_tok=%d%s err=%s",
+			provider, time.Since(start).Milliseconds(), len(respBody), usage.InputTokens, usage.OutputTokens,
+			anthropicLogFields(spec.Style, respBody), truncate(msg, 300))
+		// HTTP 200 means the provider billed this call; hand the counts to the caller.
+		return nil, &llmBadShapeError{msg: msg, Model: model, Usage: usage}
 	}
 	syn.Model = model
-	usage := extractUsage(spec.Style, respBody)
 	syn.InputTokens = usage.InputTokens
 	syn.OutputTokens = usage.OutputTokens
-	log.Printf("llm: ok provider=%s model=%s elapsed_ms=%d resp_bytes=%d in_tok=%d out_tok=%d",
+	log.Printf("llm: ok provider=%s model=%s elapsed_ms=%d resp_bytes=%d in_tok=%d out_tok=%d%s",
 		provider, model, time.Since(start).Milliseconds(), len(respBody),
-		usage.InputTokens, usage.OutputTokens)
+		usage.InputTokens, usage.OutputTokens, anthropicLogFields(spec.Style, respBody))
 	return syn, nil
 }
 
@@ -664,12 +666,18 @@ func extractChatText(style authStyle, body []byte) (string, error) {
 		if err := json.Unmarshal(body, &r); err != nil {
 			return "", errors.New("invalid provider response JSON")
 		}
+		// Concatenate every text block in order; thinking, redacted_thinking and
+		// tool_use blocks carry no answer text and are ignored.
+		var sb strings.Builder
 		for _, c := range r.Content {
-			if c.Type == "text" && c.Text != "" {
-				return c.Text, nil
+			if c.Type == "text" {
+				sb.WriteString(c.Text)
 			}
 		}
-		return "", errors.New("provider response contained no text content")
+		if sb.Len() == 0 {
+			return "", errors.New("provider response contained no text content")
+		}
+		return sb.String(), nil
 	}
 	var r struct {
 		Choices []struct {
@@ -726,14 +734,19 @@ func extractUsage(style authStyle, body []byte) tokenUsage {
 // parseSynthesis parses the model's JSON verdict, tolerating markdown fences
 // and surrounding prose, then normalizes the fields.
 func parseSynthesis(text string) (*llmSynthesis, error) {
-	start := strings.IndexByte(text, '{')
-	end := strings.LastIndexByte(text, '}')
-	if start < 0 || end <= start {
-		return nil, errors.New("no JSON object in model output")
-	}
 	var syn llmSynthesis
-	if err := json.Unmarshal([]byte(text[start:end+1]), &syn); err != nil {
-		return nil, errors.New("model output is not valid JSON")
+	if t := strings.TrimSpace(text); json.Valid([]byte(t)) {
+		if err := json.Unmarshal([]byte(t), &syn); err != nil {
+			return nil, errors.New("model output is not valid JSON")
+		}
+	} else {
+		obj, ok := firstBalancedObject(text)
+		if !ok {
+			return nil, errors.New("no JSON object in model output")
+		}
+		if err := json.Unmarshal([]byte(obj), &syn); err != nil {
+			return nil, errors.New("model output is not valid JSON")
+		}
 	}
 	switch syn.Stance {
 	case "supports", "refutes", "mixed", "insufficient":
@@ -974,4 +987,80 @@ func validateModel(model string) (string, string) {
 		}
 	}
 	return model, ""
+}
+
+// llmBadShapeError is returned when the provider answered HTTP 200 but the
+// output could not be parsed. The call was still paid for, so it carries the
+// model and token counts for the usage ledger.
+type llmBadShapeError struct {
+	msg   string
+	Model string
+	Usage tokenUsage
+}
+
+func (e *llmBadShapeError) Error() string { return e.msg }
+
+// firstBalancedObject returns the first top-level {...} object in text that is
+// valid JSON, skipping braces inside JSON strings. Prose and ``` fences around
+// the object are ignored; an unterminated (truncated) object yields false.
+func firstBalancedObject(text string) (string, bool) {
+	for from := 0; from < len(text); {
+		i := strings.IndexByte(text[from:], '{')
+		if i < 0 {
+			return "", false
+		}
+		start := from + i
+		depth, inStr, esc := 0, false, false
+		for j := start; j < len(text); j++ {
+			c := text[j]
+			switch {
+			case inStr:
+				if esc {
+					esc = false
+				} else if c == '\\' {
+					esc = true
+				} else if c == '"' {
+					inStr = false
+				}
+			case c == '"':
+				inStr = true
+			case c == '{':
+				depth++
+			case c == '}':
+				depth--
+				if depth == 0 {
+					if cand := text[start : j+1]; json.Valid([]byte(cand)) {
+						return cand, true
+					}
+					from = start + 1
+					goto next
+				}
+			}
+		}
+		return "", false // unterminated from this start
+	next:
+	}
+	return "", false
+}
+
+// anthropicLogFields returns " stop_reason=<v> blocks=<types>" for an Anthropic
+// response, "" for other styles. Types and the stop reason only; no content.
+func anthropicLogFields(style authStyle, body []byte) string {
+	if style != styleAnthropic {
+		return ""
+	}
+	var r struct {
+		StopReason string `json:"stop_reason"`
+		Content    []struct {
+			Type string `json:"type"`
+		} `json:"content"`
+	}
+	if json.Unmarshal(body, &r) != nil {
+		return ""
+	}
+	types := make([]string, 0, len(r.Content))
+	for _, c := range r.Content {
+		types = append(types, truncate(c.Type, 30))
+	}
+	return " stop_reason=" + truncate(r.StopReason, 30) + " blocks=" + strings.Join(types, ",")
 }
