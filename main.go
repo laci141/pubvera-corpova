@@ -506,11 +506,18 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 		Result:       json.RawMessage(raw),
 	}
 	deep := llmWillRun(b, endpoint)
+	var failModel string
+	var failIn, failOut int
 	if deep {
 		syn, err := llmSynthesize(ctx, b.provider, b.key, b.model, endpoint, claims, raw)
 		if err != nil {
 			// Already sanitized/redacted by providers.go; safe for client + log-free.
 			resp.LLMError = err.Error()
+			// Unparseable output from a call the provider billed: still price it.
+			var bs *llmBadShapeError
+			if errors.As(err, &bs) {
+				failModel, failIn, failOut = bs.Model, bs.Usage.InputTokens, bs.Usage.OutputTokens
+			}
 		} else {
 			resp.LLMSynthesis = syn
 			resp.StanceSource = "llm:" + b.provider
@@ -548,6 +555,9 @@ func runCLIJSON(w http.ResponseWriter, r *http.Request, b byok, endpoint string,
 		model = resp.LLMSynthesis.Model
 		inTok = resp.LLMSynthesis.InputTokens
 		outTok = resp.LLMSynthesis.OutputTokens
+	}
+	if model == "" && failModel != "" {
+		model, inTok, outTok = failModel, failIn, failOut
 	}
 	recordUsage(r, kind, model, inTok, outTok)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
