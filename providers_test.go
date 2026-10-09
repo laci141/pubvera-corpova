@@ -484,6 +484,86 @@ func TestAnthropicTemperatureOmittedForClaude55(t *testing.T) {
 	}
 }
 
+// TestAnthropicThinkingDisabledForHaiku55Only: Haiku 5.5 spends the whole
+// max_tokens budget on thinking and returns no text block, so it alone gets
+// thinking disabled. Sonnet/Opus 5.5 and older models must keep the default
+// (field absent); the 5.5 family never gets temperature.
+func TestAnthropicThinkingDisabledForHaiku55Only(t *testing.T) {
+	tests := []struct {
+		model        string
+		wantThinking bool
+		wantTemp     bool
+	}{
+		{"claude-haiku-5-5", true, false},
+		{"claude-sonnet-5-5", false, false},
+		{"claude-opus-5-5", false, false},
+		{"claude-haiku-4-5", false, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.model, func(t *testing.T) {
+			var got string
+			llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				got = string(b)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"{\"stance\":\"supports\",\"confidence\":0.9,\"reasoning\":\"ok\",\"key_evidence\":[]}"}]}`))
+			}))
+			defer llm.Close()
+			prev := providers["anthropic"]
+			providers["anthropic"] = providerSpec{BaseURL: llm.URL, DefaultModel: prev.DefaultModel, Style: styleAnthropic}
+			t.Cleanup(func() { providers["anthropic"] = prev })
+
+			if _, err := llmSynthesize(context.Background(), "anthropic", "k", tc.model, "consensus", []string{"c"}, consensusJSON(t, 1)); err != nil {
+				t.Fatalf("llmSynthesize: %v", err)
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(got), &body); err != nil {
+				t.Fatalf("body is not JSON: %v: %s", err, got)
+			}
+			raw, has := body["thinking"]
+			if has != tc.wantThinking {
+				t.Fatalf("%s: thinking present=%v, want %v: %s", tc.model, has, tc.wantThinking, got)
+			}
+			if tc.wantThinking && string(raw) != `{"type":"disabled"}` {
+				t.Errorf("thinking = %s, want {\"type\":\"disabled\"}", raw)
+			}
+			if _, hasTemp := body["temperature"]; hasTemp != tc.wantTemp {
+				t.Errorf("%s: temperature present=%v, want %v: %s", tc.model, hasTemp, tc.wantTemp, got)
+			}
+			if _, has := body["output_config"]; has {
+				t.Errorf("%s: body must not carry output_config: %s", tc.model, got)
+			}
+		})
+	}
+}
+
+// TestAnthropicNoTextContentKeepsUsage: a response that is only a thinking
+// block (stop_reason max_tokens) is billed by Anthropic, so the error must
+// carry the model and token counts for main.go to price it. The UI message
+// is unchanged.
+func TestAnthropicNoTextContentKeepsUsage(t *testing.T) {
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(anthropicBody("max_tokens", 321, 4096, `{"type":"thinking","thinking":"hmm","signature":"s"}`)))
+	}))
+	defer llm.Close()
+	prev := providers["anthropic"]
+	providers["anthropic"] = providerSpec{BaseURL: llm.URL, DefaultModel: prev.DefaultModel, Style: styleAnthropic}
+	t.Cleanup(func() { providers["anthropic"] = prev })
+
+	_, err := llmSynthesize(context.Background(), "anthropic", "k", "claude-haiku-5-5", "consensus", []string{"c"}, consensusJSON(t, 1))
+	if err == nil || err.Error() != "provider response contained no text content" {
+		t.Fatalf("want no-text-content error, got %v", err)
+	}
+	var bs *llmBadShapeError
+	if !errors.As(err, &bs) {
+		t.Fatalf("error carries no usage: %T %v", err, err)
+	}
+	if bs.Model != "claude-haiku-5-5" || bs.Usage.InputTokens != 321 || bs.Usage.OutputTokens != 4096 {
+		t.Errorf("usage = %q %+v, want claude-haiku-5-5 in=321 out=4096", bs.Model, bs.Usage)
+	}
+}
+
 // anthropicBody builds a wire response: blocks are raw JSON content blocks.
 func anthropicBody(stop string, in, out int, blocks ...string) string {
 	return fmt.Sprintf(`{"content":[%s],"stop_reason":%q,"usage":{"input_tokens":%d,"output_tokens":%d}}`,

@@ -498,11 +498,31 @@ type openAIRequest struct {
 }
 
 type anthropicRequest struct {
-	Model       string        `json:"model"`
-	MaxTokens   int           `json:"max_tokens"`
-	Temperature *float64      `json:"temperature,omitempty"`
-	Messages    []chatMessage `json:"messages"`
+	Model       string             `json:"model"`
+	MaxTokens   int                `json:"max_tokens"`
+	Temperature *float64           `json:"temperature,omitempty"`
+	Thinking    *anthropicThinking `json:"thinking,omitempty"`
+	Messages    []chatMessage      `json:"messages"`
 }
+
+// anthropicThinking is Anthropic's thinking toggle. Pointer-typed in
+// anthropicRequest so the field is absent unless a model needs it off.
+type anthropicThinking struct {
+	Type string `json:"type"`
+}
+
+// anthropicDisableThinking reports whether thinking must be switched off for
+// the model. Measured 2026-10-09: claude-haiku-5-5 spent the whole 4096
+// max_tokens budget on thinking (stop_reason max_tokens, no text block).
+// Sonnet 5.5 and Opus 5.5 answer fine with the default, so only Haiku 5.5 is
+// listed.
+func anthropicDisableThinking(model string) bool {
+	return strings.HasPrefix(model, "claude-haiku-5-5")
+}
+
+// errAnthropicNoText marks a 200 response that held no text block (for example
+// thinking only, cut off by max_tokens). The provider billed that call.
+var errAnthropicNoText = errors.New("provider response contained no text content")
 
 // anthropicSupportsTemperature reports whether the model still accepts the
 // temperature parameter. The Claude 5.5 family (ids containing "-5-5") answers
@@ -549,7 +569,11 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		if !anthropicSupportsTemperature(model) {
 			anthropicTemp = nil
 		}
-		payload = anthropicRequest{Model: model, MaxTokens: 4096, Temperature: anthropicTemp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
+		areq := anthropicRequest{Model: model, MaxTokens: 4096, Temperature: anthropicTemp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
+		if anthropicDisableThinking(model) {
+			areq.Thinking = &anthropicThinking{Type: "disabled"}
+		}
+		payload = areq
 	default:
 		url = spec.BaseURL + "/chat/completions"
 		reqPayload := openAIRequest{Model: model, Temperature: temp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
@@ -633,6 +657,10 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		msg := sanitizeLLMError(err.Error(), key)
 		log.Printf("llm: badshape provider=%s elapsed_ms=%d resp_bytes=%d%s err=%s",
 			provider, time.Since(start).Milliseconds(), len(respBody), anthropicLogFields(spec.Style, respBody), truncate(msg, 300))
+		// A thinking-only HTTP 200 was billed: hand the counts to the caller.
+		if errors.Is(err, errAnthropicNoText) {
+			return nil, &llmBadShapeError{msg: msg, Model: model, Usage: extractUsage(spec.Style, respBody)}
+		}
 		return nil, errors.New(msg)
 	}
 	usage := extractUsage(spec.Style, respBody)
@@ -675,7 +703,7 @@ func extractChatText(style authStyle, body []byte) (string, error) {
 			}
 		}
 		if sb.Len() == 0 {
-			return "", errors.New("provider response contained no text content")
+			return "", errAnthropicNoText
 		}
 		return sb.String(), nil
 	}
