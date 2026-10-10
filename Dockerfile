@@ -16,7 +16,7 @@
 #
 # Stage 2 builds the web server for linux/amd64 from all root *.go files
 # (main.go + providers.go).
-ARG PP_LIBRARY_COMMIT=58edea349ce3df8a301d4d8950119487c32604b8
+ARG PP_LIBRARY_COMMIT=46115d15264665ec71f4e86c55ce41b8c6f1eb09
 
 # ---- Stage 1: build the CLI from upstream source -----------------------------
 FROM golang:1.27.2-alpine AS cli-builder
