@@ -19,7 +19,7 @@
 ARG PP_LIBRARY_COMMIT=46115d15264665ec71f4e86c55ce41b8c6f1eb09
 
 # ---- Stage 1: build the CLI from upstream source -----------------------------
-FROM golang:1.27.2-alpine AS cli-builder
+FROM golang:1.27.3-alpine AS cli-builder
 ARG PP_LIBRARY_COMMIT
 RUN CGO_ENABLED=0 go install -trimpath \
     github.com/mvanhorn/printing-press-library/library/other/scientific-consensus/cmd/scientific-consensus-pp-cli@${PP_LIBRARY_COMMIT}
@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 go install -trimpath \
 # ---- Stage 2: build the web server ------------------------------------------
 # The web module is stdlib-only, so it has no go.sum and `go mod download` is a
 # no-op — copy just go.mod.
-FROM golang:1.27.2-alpine AS web-builder
+FROM golang:1.27.3-alpine AS web-builder
 WORKDIR /build
 COPY go.mod ./
 COPY *.go ./
