@@ -113,6 +113,9 @@ function check(name, actual, expected) {
 const fireInput = el => listeners.input.forEach(fn => fn({ target: el }));
 // capture downloads instead of touching the (absent) real DOM
 ctx(`triggerDownload = (blob, filename) => { downloads.push({ text: blob.text, filename }); };`);
+// Exports read the claim per endpoint (COR-002); fixtures that predate that set
+// the same claim for every endpoint, which is what the old global gave them.
+ctx(`var setAllQueries = q => { Object.keys(lastQueries).forEach(e => { lastQueries[e] = q; }); };`);
 
 function metaRowEl(key) {
   const row = new El('div', ['meta-row'], { dataset: { key } });
@@ -131,7 +134,7 @@ const titles = Array.from({ length: 10 }, (_, i) => (i % 3 === 0 ? `magnesium st
 card1.add(mr1, ...titles.map(t => new El('div', ['study-card'], { text: t })));
 root1.add(card1); renumber(root1);
 sandbox.__root1 = root1;
-ctx(`lastQuery = 'magnesium lowers blood pressure';
+ctx(`setAllQueries('magnesium lowers blood pressure');
      lastData.consensus_studies = ${JSON.stringify(titles.map((t, i) => ({ title: t, year: 2020 + (i % 5), citations: i * 10, doi: '10.1/x' + i, group: i < 6 ? 'supporting' : 'refuting' })))};
      bindExportViews(__root1);`);
 check('S1 initial qcount', mr1.querySelector('.qcount').textContent, ' · 10 / 10 rows');
@@ -221,7 +224,7 @@ const keysOf = text => [...text.matchAll(/@\w+\s*\{\s*([^,\s]+)\s*,/g)].map(m =>
 const overlap = (a, b) => a.filter(k => b.includes(k));
 
 function bibKeysFor(claim, key, stored) {
-  ctx(`lastQuery = ${JSON.stringify(claim)};
+  ctx(`setAllQueries(${JSON.stringify(claim)});
        lastData[${JSON.stringify(key)}] = ${JSON.stringify(stored)};
        downloadBibTeX(${JSON.stringify(key)}, 'x.bib');`);
   return keysOf(downloads[downloads.length - 1].text);
@@ -314,7 +317,7 @@ const mr7 = metaRowEl('consensus_studies');
 card7.add(mr7, new El('div', ['study-card'], { text: 'only study' }));
 root7.add(card7); renumber(root7);
 sandbox.__root7 = root7;
-ctx(`lastQuery = 'single row claim';
+ctx(`setAllQueries('single row claim');
      lastData.consensus_studies = [{ title: 'only study', year: 2020 }];
      bindExportViews(__root7);`);
 check('S7 badge singular', mr7.querySelector('.qcount').textContent, ' · 1 / 1 row');
@@ -468,7 +471,7 @@ const withMetaRow = (text, fn) => {
 const analysisTitle = (key, rows) =>
   bibTitle(ctx(`analysisBibTeX(${JSON.stringify(key)}, ${JSON.stringify(rows)}, new Set())`));
 
-ctx(`lastQuery = ${JSON.stringify(CLAIM8)};`);
+ctx(`setAllQueries(${JSON.stringify(CLAIM8)});`);
 
 check('S8 consensus_verdict title',
   withMetaRow('Consensus analysis · ' + CLAIM8 + ' · 3 / 3 rows',
@@ -522,7 +525,7 @@ check('S9 boolCell(null)', ctx(`boolCell(null)`), '');
 // Two fixture rows for one export key: row 0 measured false, row 1 field absent.
 // The union of columns puts `contested` in both rows, so the absent case is a
 // real empty cell and not a missing column.
-ctx(`lastQuery = 'aspartame is contested';
+ctx(`setAllQueries('aspartame is contested');
      lastData.controversies_summary = { rows: [
        { claim: 'measured', contested: false },
        { claim: 'absent' }
@@ -583,7 +586,7 @@ const renderContro = result =>
   ctx(`renderResult('controversies', ${JSON.stringify(result)}, 'heuristic', {})`);
 
 // -- the summary row ---------------------------------------------------------
-ctx(`lastQuery = 'aspartame causes cancer';`);
+ctx(`setAllQueries('aspartame causes cancer');`);
 const html10 = renderContro(CONTRO28);
 const row10 = ctx(`lastData.controversies_summary.rows[0]`);
 check('S10 summary row carries inconclusive', row10.inconclusive, 18);
@@ -615,7 +618,7 @@ check('S10 CSV inconclusive cell is 18', csvCell(csv10, 0, 'inconclusive'), '18'
 // The key is written unconditionally, so the column is still there; the value
 // is undefined, which toCSV/boolCell render as an EMPTY cell — "no data" —
 // rather than "0" (a measured claim we cannot make), NaN or "undefined".
-ctx(`lastQuery = 'aspartame causes cancer';`);
+ctx(`setAllQueries('aspartame causes cancer');`);
 const htmlLegacy = renderContro(CONTRO_LEGACY);
 const rowLegacy = ctx(`lastData.controversies_summary.rows[0]`);
 check('S10 legacy row keeps the key', 'inconclusive' in rowLegacy, true);
@@ -666,7 +669,7 @@ const compareResult = (allA, allB) => ({
 
 const renderCompare11 = (allA, allB) => {
   const result = compareResult(allA, allB);
-  ctx(`lastQuery = ${JSON.stringify(CLAIM_A11)}; aiExcluded = [{ title: 'b-excluded-work', reason: 'off topic' }];`);
+  ctx(`setAllQueries(${JSON.stringify(CLAIM_A11)}); aiExcluded = [{ title: 'b-excluded-work', reason: 'off topic' }];`);
   // The 4th argument is the raw API envelope, which is what the corpus block
   // resolves the retrieved count from.
   return ctx(`renderResult('compare', ${JSON.stringify(result)}, 'llm:test', ${JSON.stringify({ result })})`);
@@ -743,6 +746,74 @@ check('S11 consensus_all renders no claim subheads',
   cons11.includes('all-studies-claim-subhead'), false);
 check('S11 consensus_all group is still "analyzed"',
   [...new Set(consRows11.map(r => r.group))], ['analyzed']);
+
+// -- scenario 12 (COR-002): export metadata belongs to the exported run -----
+// Two modals can be open at once, so analysis A can still be on screen when
+// analysis B finishes in another modal. Exporting A must name A's claim, not
+// the claim of whichever run happened to finish last. Drives the real
+// runAnalysis with a fake fetch and fake form fields.
+const CLAIM12 = { consensus: 'vitamin d prevents hip fractures', controversies: 'aspartame causes cancer' };
+const RESULT12 = {
+  consensus: { claim: CLAIM12.consensus, verdict: 'evidence-supports', consensus_score: 0.8, confidence: 0.7,
+    evidence_strength: 's', apex_design: 'rct', study_count: 12, stance_method: 'm',
+    top_supporting: [one], top_refuting: [] },
+  controversies: CONTRO28,
+};
+const SUMMARY_KEY12 = { consensus: 'consensus_verdict', controversies: 'controversies_summary' };
+const results12 = {};
+async function run12(endpoint) {
+  const fields = {
+    [`${endpoint}Key`]: { value: '' },
+    [`${endpoint}Provider`]: { value: '' },
+    [`${endpoint}Limit`]: { value: '25' },
+    [`${endpoint}Form`]: { style: {} },
+    [`${endpoint}Results`]: { style: {}, innerHTML: '', querySelectorAll: () => [] },
+    [`${endpoint}Claim`]: { value: CLAIM12[endpoint] },
+    [`${endpoint}Model`]: { value: '' },
+  };
+  const prevGet = sandbox.document.getElementById;
+  sandbox.document.getElementById = id => fields[id] || null;
+  sandbox.fetch = async () => ({ ok: true, json: async () => ({ result: RESULT12[endpoint], stance_source: 'heuristic' }) });
+  try { await ctx(`runAnalysis(${JSON.stringify(endpoint)})`); }
+  finally { sandbox.document.getElementById = prevGet; delete sandbox.fetch; }
+  results12[endpoint] = fields[`${endpoint}Results`].innerHTML;
+}
+function checkExport12(tag, endpoint, other) {
+  const key = SUMMARY_KEY12[endpoint];
+  const mine = CLAIM12[endpoint], theirs = CLAIM12[other];
+  ctx(`downloadJSON(${JSON.stringify(key)}, 'q.json'); downloadBibTeX(${JSON.stringify(key)}, 'q.bib');
+       downloadCSV(${JSON.stringify(key)}, 'q.csv');`);
+  const [json, bib, csv] = downloads.slice(-3);
+  check(`S12 ${tag}: ${endpoint} JSON export.query is its own claim`, JSON.parse(json.text).export.query, mine);
+  const title = bibTitle(bib.text) || '';
+  check(`S12 ${tag}: ${endpoint} BibTeX title names its own claim`, title.includes(mine), true);
+  check(`S12 ${tag}: ${endpoint} BibTeX title does not name the other claim`, title.includes(theirs), false);
+  const slug = ctx(`asciiSlug(${JSON.stringify(mine)}, 28, 'untitled')`);
+  check(`S12 ${tag}: ${endpoint} citation key slug is built from its own claim`,
+    keysOf(bib.text).every(k => k.includes('_' + slug + '_')), true);
+  // The BibTeX "% " line carries exportHeader verbatim; the CSV copy is quote-escaped.
+  const header = bib.text.split('\n')[0].replace(/^% /, '').split(' · ');
+  check(`S12 ${tag}: ${endpoint} export header names its own claim`,
+    header.filter(p => p.startsWith('query: ')), ['query: "' + mine + '"']);
+  check(`S12 ${tag}: ${endpoint} CSV header names its own claim`,
+    csv.text.split('\r\n')[1].includes(mine) && !csv.text.split('\r\n')[1].includes(theirs), true);
+  const label = ANALYSIS_LABEL12[endpoint] + ' · ' + mine;
+  check(`S12 ${tag}: ${endpoint} rendered meta row names its own claim`,
+    allMeta(results12[endpoint]).includes(label), true);
+  check(`S12 ${tag}: ${endpoint} topMetaRow names its own claim`,
+    allMeta(ctx(`topMetaRow(${JSON.stringify(endpoint)})`)).includes(label), true);
+}
+const ANALYSIS_LABEL12 = { consensus: 'Consensus analysis', controversies: 'Controversy analysis' };
+
+// A = consensus, B = controversies (B ran last), then the order reversed.
+await run12('consensus');
+await run12('controversies');
+checkExport12('A then B', 'consensus', 'controversies');
+checkExport12('A then B', 'controversies', 'consensus');
+await run12('controversies');
+await run12('consensus');
+checkExport12('B then A', 'controversies', 'consensus');
+checkExport12('B then A', 'consensus', 'controversies');
 
 // MR -- model registry refresh (2026-10-08). Defaults mirror providers.go.
 const MR_DEFAULTS = { anthropic: 'claude-haiku-5-5', openai: 'gpt-6-luna', deepseek: 'deepseek-flash', xai: 'grok-4.7' };

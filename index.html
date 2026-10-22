@@ -1597,8 +1597,11 @@
       controversies_summary: null, controversies_studies: null, controversies_excluded: null
     };
 
-    // Claim text of the most recent run — used in summary rows and BibTeX scope.
-    let lastQuery = '';
+    // Claim text per endpoint, stored by the run that refilled that endpoint's
+    // lastData keys. Exports read it by key, never from the globally last run:
+    // two modals can be open at once, so the last run may belong to another one.
+    const lastQueries = { consensus: '', evidence: '', compare: '', gaps: '', controversies: '' };
+    function queryFor(key) { return lastQueries[String(key).split('_')[0]] || ''; }
 
     // Which export key holds the API response for this key's run. Study-list and
     // excluded-list keys store a bare array, so they read the retrieved count
@@ -1783,7 +1786,8 @@
       const shown = rows ? rows.length : 0;
       const parts = ['Corpova export'];
       if (ANALYSIS_LABEL[key]) parts.push(ANALYSIS_LABEL[key]);
-      if (lastQuery) parts.push('query: "' + lastQuery + '"');
+      const query = queryFor(key);
+      if (query) parts.push('query: "' + query + '"');
       parts.push(total && total !== shown ? ('showing ' + shown + ' of ' + plural(total, 'row')) : plural(shown, 'row'));
       const retrieved = corpusRetrieved(key);
       if (retrieved !== undefined) parts.push(retrieved + ' retrieved');
@@ -2078,13 +2082,14 @@
       const now = new Date();
       const y = now.getFullYear();
       const stamp = y + ('0' + (now.getMonth() + 1)).slice(-2) + ('0' + now.getDate()).slice(-2);
+      const query = queryFor(key);
       const base = 'corpova_' + (ANALYSIS_SLUG[key] || asciiSlug(key, 24, 'analysis')) +
-        '_' + asciiSlug(lastQuery, 28, 'untitled') +
-        '_' + hash3(keyWords(lastQuery).join(' ')) + '_' + stamp;
-      // The claim comes from lastQuery, not from the rendered meta-row: three
+        '_' + asciiSlug(query, 28, 'untitled') +
+        '_' + hash3(keyWords(query).join(' ')) + '_' + stamp;
+      // The claim comes from queryFor(key), not from the rendered meta-row: three
       // summary rows already print the label in that text, so scraping it back
       // duplicated the label, and the row-count badge leaked into the title.
-      const title = bibEsc(label + (lastQuery ? ': ' + lastQuery : ''));
+      const title = bibEsc(label + (query ? ': ' + query : ''));
       return '@misc{' + uniqueKey(base, used) + ',\n' +
         '  title  = {' + title + '},\n' +
         '  author = {{Corpova}},\n' +
@@ -2119,7 +2124,7 @@
         export: {
           app: 'Corpova',
           analysis: ANALYSIS_LABEL[key] || '',
-          query: lastQuery,
+          query: queryFor(key),
           filters: v.filters,
           rows_exported: v.rows.length,
           rows_total: raw.length,
@@ -2176,11 +2181,11 @@
     // with a one-row summary export (their per-study rows live in the cards).
     function topMetaRow(endpoint) {
       if (endpoint === 'consensus')
-        return metaRow('Consensus analysis · ' + esc(lastQuery), 'consensus_verdict', 'corpova-consensus.json', { filter: false });
+        return metaRow('Consensus analysis · ' + esc(queryFor('consensus_verdict')), 'consensus_verdict', 'corpova-consensus.json', { filter: false });
       if (endpoint === 'compare')
-        return metaRow('Claim comparison · ' + esc(lastQuery), 'compare_summary', 'corpova-compare.json', { filter: false });
+        return metaRow('Claim comparison · ' + esc(queryFor('compare_summary')), 'compare_summary', 'corpova-compare.json', { filter: false });
       if (endpoint === 'controversies')
-        return metaRow('Controversy analysis · ' + esc(lastQuery), 'controversies_summary', 'corpova-controversies.json', { filter: false });
+        return metaRow('Controversy analysis · ' + esc(queryFor('controversies_summary')), 'controversies_summary', 'corpova-controversies.json', { filter: false });
       return '';
     }
 
@@ -2323,7 +2328,7 @@
         if (data === null) throw new Error('The server returned a response that could not be read.');
         const result = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
         aiExcluded = buildExcludedIndex(data.llm_synthesis);
-        lastQuery = endpoint === 'compare' ? `${body.claim1} vs ${body.claim2}` : body.claim;
+        lastQueries[endpoint] = endpoint === 'compare' ? `${body.claim1} vs ${body.claim2}` : body.claim;
         // gaps/evidence never get an LLM synthesis (the server skips it — their
         // CLI output is summary-only), so show a short note in its place.
         const synthesisBlock = (endpoint === 'gaps' || endpoint === 'evidence')
@@ -2820,7 +2825,7 @@
         const guarded = !!result.evidence_guarded;
         lastData.consensus_verdict = {
           analysis: [{
-            claim: lastQuery, verdict: result.verdict || '',
+            claim: lastQueries.consensus, verdict: result.verdict || '',
             consensus_score: result.consensus_score, confidence: result.confidence,
             evidence_strength: result.evidence_strength || '', apex_design: result.apex_design || '',
             studies_analyzed: result.study_count,
@@ -3010,7 +3015,7 @@
         lastData.controversies_studies = studies;
         lastData.controversies_summary = {
           rows: [{
-            claim: lastQuery, controversy_score: result.controversy_score,
+            claim: lastQueries.controversies, controversy_score: result.controversy_score,
             contested: !!result.contested, studies_analyzed: result.study_count,
             supporting: result.supporting, refuting: result.refuting, mixed: result.mixed,
             inconclusive: result.inconclusive
