@@ -1884,6 +1884,8 @@
       const cell = v => {
         if (v === null || v === undefined || typeof v === "boolean") return boolCell(v);
         let s = (typeof v === "object") ? JSON.stringify(v) : String(v);
+        // OWASP CSV Injection: prefix formula-trigger strings so Excel shows them as text.
+        if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
         if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
         return s;
       };
