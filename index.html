@@ -1048,6 +1048,9 @@
         <textarea id="consensusClaim" placeholder="Enter your claim..." style="height: 80px;"></textarea>
         <label style="margin-top: 1rem;">LLM Key (optional)</label>
         <input type="password" id="consensusKey" placeholder="sk-ant-... for AI-assisted mode">
+        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="consensusKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
+        <button type="button" class="auth-btn" id="consensusKeyClear" style="margin-top: 0.5rem;">Clear key</button>
         <label style="margin-top: 1rem;">Provider</label>
         <select id="consensusProvider">
           <option value="">Heuristic (default)</option>
@@ -1113,6 +1116,9 @@
         <textarea id="evidenceClaim" placeholder="Enter your claim..." style="height: 80px;"></textarea>
         <label style="margin-top: 1rem;">LLM Key (optional)</label>
         <input type="password" id="evidenceKey" placeholder="sk-ant-... for AI-assisted mode">
+        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="evidenceKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
+        <button type="button" class="auth-btn" id="evidenceKeyClear" style="margin-top: 0.5rem;">Clear key</button>
         <label style="margin-top: 1rem;">Provider</label>
         <select id="evidenceProvider">
           <option value="">Heuristic (default)</option>
@@ -1180,6 +1186,9 @@
         <textarea id="compareClaim2" placeholder="Enter second claim..." style="height: 70px;"></textarea>
         <label style="margin-top: 1rem;">LLM Key (optional)</label>
         <input type="password" id="compareKey" placeholder="sk-ant-... for AI-assisted mode">
+        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="compareKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
+        <button type="button" class="auth-btn" id="compareKeyClear" style="margin-top: 0.5rem;">Clear key</button>
         <label style="margin-top: 1rem;">Provider</label>
         <select id="compareProvider">
           <option value="">Heuristic (default)</option>
@@ -1245,6 +1254,9 @@
         <textarea id="gapsClaim" placeholder="Enter your claim..." style="height: 80px;"></textarea>
         <label style="margin-top: 1rem;">LLM Key (optional)</label>
         <input type="password" id="gapsKey" placeholder="sk-ant-... for AI-assisted mode">
+        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="gapsKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
+        <button type="button" class="auth-btn" id="gapsKeyClear" style="margin-top: 0.5rem;">Clear key</button>
         <label style="margin-top: 1rem;">Provider</label>
         <select id="gapsProvider">
           <option value="">Heuristic (default)</option>
@@ -1310,6 +1322,9 @@
         <textarea id="controversiesClaim" placeholder="Enter your claim..." style="height: 80px;"></textarea>
         <label style="margin-top: 1rem;">LLM Key (optional)</label>
         <input type="password" id="controversiesKey" placeholder="sk-ant-... for AI-assisted mode">
+        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="controversiesKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
+        <button type="button" class="auth-btn" id="controversiesKeyClear" style="margin-top: 0.5rem;">Clear key</button>
         <label style="margin-top: 1rem;">Provider</label>
         <select id="controversiesProvider">
           <option value="">Heuristic (default)</option>
@@ -1380,7 +1395,14 @@
 
   <script>
     // localStorage integration
-    const storageKeys = { key: 'sc_llm_key', provider: 'sc_provider', model: 'sc_model' };
+    const storageKeys = { key: 'sc_llm_key', keyRemember: 'sc_llm_key_remember', provider: 'sc_provider', model: 'sc_model' };
+    const keyEndpoints = ['consensus', 'evidence', 'compare', 'gaps', 'controversies'];
+
+    // The BYOK key lives only in the modal inputs unless the user ticks
+    // "Remember this key on this browser" (COR-003). localStorage survives
+    // reloads and is readable by any script on this origin, so persisting the
+    // key is opt-in. Provider and model preferences are not tied to this flag.
+    let rememberKey = false;
 
     // Default model per provider — prefilled into the Model field on selection
     // and shown as a hint. Users can override with any model id (openrouter
@@ -1513,17 +1535,57 @@
     }
 
     function loadSettings() {
-      const stored_key = localStorage.getItem(storageKeys.key) || '';
+      rememberKey = localStorage.getItem(storageKeys.keyRemember) === '1';
+      // Legacy migration: a key saved by the old automatic save has no flag.
+      if (!rememberKey) localStorage.removeItem(storageKeys.key);
+      const stored_key = rememberKey ? (localStorage.getItem(storageKeys.key) || '') : '';
       const stored_provider = localStorage.getItem(storageKeys.provider) || '';
       const stored_model = localStorage.getItem(storageKeys.model) || '';
-      ['consensus', 'evidence', 'compare', 'gaps', 'controversies'].forEach(ep => {
+      keyEndpoints.forEach(ep => {
         const keyElem = document.getElementById(`${ep}Key`);
+        const rememberElem = document.getElementById(`${ep}KeyRemember`);
         const provElem = document.getElementById(`${ep}Provider`);
         const modelElem = document.getElementById(`${ep}Model`);
-        if (keyElem) keyElem.value = stored_key;
+        if (keyElem && (rememberKey || !keyElem.value)) keyElem.value = stored_key;
+        if (rememberElem) rememberElem.checked = rememberKey;
         if (provElem) provElem.value = stored_provider;
         if (modelElem) modelElem.value = stored_model;
         syncModelField(ep);
+      });
+    }
+
+    // setKeyInputs keeps the key identical in every modal, in memory only.
+    function setKeyInputs(value) {
+      keyEndpoints.forEach(ep => {
+        const keyElem = document.getElementById(`${ep}Key`);
+        if (keyElem) keyElem.value = value;
+      });
+    }
+
+    function setKeyRemember(on, endpoint) {
+      rememberKey = on;
+      keyEndpoints.forEach(ep => {
+        const rememberElem = document.getElementById(`${ep}KeyRemember`);
+        if (rememberElem) rememberElem.checked = on;
+      });
+      if (on) {
+        const keyElem = document.getElementById(`${endpoint}Key`);
+        localStorage.setItem(storageKeys.key, keyElem ? keyElem.value : '');
+        localStorage.setItem(storageKeys.keyRemember, '1');
+      } else {
+        localStorage.removeItem(storageKeys.key);
+        localStorage.removeItem(storageKeys.keyRemember);
+      }
+    }
+
+    function clearKey() {
+      localStorage.removeItem(storageKeys.key);
+      localStorage.removeItem(storageKeys.keyRemember);
+      rememberKey = false;
+      setKeyInputs('');
+      keyEndpoints.forEach(ep => {
+        const rememberElem = document.getElementById(`${ep}KeyRemember`);
+        if (rememberElem) rememberElem.checked = false;
       });
     }
 
@@ -1531,7 +1593,10 @@
       const keyElem = document.getElementById(`${endpoint}Key`);
       const provElem = document.getElementById(`${endpoint}Provider`);
       const modelElem = document.getElementById(`${endpoint}Model`);
-      if (keyElem) localStorage.setItem(storageKeys.key, keyElem.value);
+      if (keyElem) {
+        setKeyInputs(keyElem.value);
+        if (rememberKey) localStorage.setItem(storageKeys.key, keyElem.value);
+      }
       if (provElem) localStorage.setItem(storageKeys.provider, provElem.value);
       if (modelElem) localStorage.setItem(storageKeys.model, modelElem.value);
     }
@@ -1543,15 +1608,20 @@
     // none of sc_llm_key, sc_provider or sc_model, while a direct probe showed
     // storage itself working and both functions defined and reachable.
     //
-    // Saving on input as well as on Run means a key survives a page that is
-    // closed before any analysis is run, which is how it was most often lost.
+    // Saving on input as well as on Run means a remembered key survives a page
+    // that is closed before any analysis is run. Without the remember box the
+    // key is only copied to the other modals, never written to storage.
     document.addEventListener('DOMContentLoaded', () => {
       loadSettings();
-      ['consensus', 'evidence', 'compare', 'gaps', 'controversies'].forEach(ep => {
+      keyEndpoints.forEach(ep => {
         ['Key', 'Provider', 'Model'].forEach(field => {
           const el = document.getElementById(`${ep}${field}`);
           if (el) el.addEventListener('input', () => saveSettings(ep));
         });
+        const rememberElem = document.getElementById(`${ep}KeyRemember`);
+        if (rememberElem) rememberElem.addEventListener('change', () => setKeyRemember(rememberElem.checked, ep));
+        const clearElem = document.getElementById(`${ep}KeyClear`);
+        if (clearElem) clearElem.addEventListener('click', clearKey);
       });
     });
 

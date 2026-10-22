@@ -74,11 +74,17 @@ curl -X POST $BASE/api/consensus \
 
 ## BYOK LLM Providers
 
-The CLI itself is keyless/heuristic. When you supply a key (`X-LLM-Key` header,
-never stored or logged), the web layer makes ONE chat call to your chosen
+The CLI itself is keyless/heuristic. When you supply a key (`X-LLM-Key` header),
+the web layer makes ONE chat call to your chosen
 provider to synthesize the CLI output into a structured verdict
 (`llm_synthesis`: stance / confidence / reasoning / key evidence). If the LLM
 call fails you still get the full heuristic result plus a redacted `llm_error`.
+
+The server never stores or logs the key. The browser keeps it only in page
+memory (the key fields of the analysis modals), so a reload clears it, unless
+the user ticks "Remember this key on this browser": then it is kept in
+localStorage (`sc_llm_key`, flag `sc_llm_key_remember`) until the box is
+unticked or "Clear key" is pressed.
 
 | provider | base_url | default model | get a key |
 |---|---|---|---|
