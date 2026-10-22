@@ -2315,17 +2315,37 @@
       return rows;
     }
 
-    // Excluded-studies export rows: matched cards keep full metadata, unmatched
-    // entries carry title + reason only. The exclusion reason is one column.
-    function excludedRows(items, unmatched) {
+    // Excluded-studies export rows: matched cards keep full metadata. An
+    // unmatched entry takes its metadata (and claim) from the first pool item
+    // ({ work, claimLabel? }, usually all_studies) whose title matches; with no
+    // pool hit it carries title + reason only. The exclusion reason is one column.
+    function excludedRows(items, unmatched, pool) {
       const rows = items.map(i => {
         const r = studyRow(i.work, 'excluded', i.claimLabel);
         r.exclusion_reason = (i.ex && i.ex.reason) || '';
         r.matched = true;
         return r;
       });
-      unmatched.forEach(e => rows.push({ title: e.title || '', group: 'excluded', exclusion_reason: e.reason || '', matched: false }));
+      const list = Array.isArray(pool) ? pool : [];
+      unmatched.forEach(e => {
+        const hit = list.find(p => p && p.work && titleMatches(normTitle(p.work.title), e.key));
+        if (!hit) {
+          rows.push({ title: e.title || '', group: 'excluded', exclusion_reason: e.reason || '', matched: false });
+          return;
+        }
+        const r = studyRow(hit.work, 'excluded', hit.claimLabel);
+        r.exclusion_reason = e.reason || '';
+        r.matched = false;
+        rows.push(r);
+      });
       return rows;
+    }
+
+    // Compare pool for excludedRows: claim A's works first, then claim B's, so
+    // a title present under both claims takes the A label.
+    function comparePool(allA, labelA, allB, labelB) {
+      return allA.map(work => ({ work, claimLabel: labelA }))
+        .concat(allB.map(work => ({ work, claimLabel: labelB })));
     }
 
     // Reset a modal back to its form view (used by the "New analysis" button).
@@ -2633,17 +2653,21 @@
         .trim();
     }
 
-    // Conservative match: exact normalized equality, or a shared prefix of the
-    // first ~50 chars but never shorter than 25 — a false positive (marking a
-    // kept study as excluded) is worse than missing a match.
+    // Conservative match on two normTitle() keys: exact equality, or a shared
+    // prefix of the first ~50 chars but never shorter than 25 — a false
+    // positive (marking a kept study as excluded) is worse than missing a match.
+    function titleMatches(a, b) {
+      if (!a || !b) return false;
+      if (a === b) return true;
+      const n = Math.min(50, a.length, b.length);
+      return n >= 25 && a.slice(0, n) === b.slice(0, n);
+    }
+
     function findExclusion(cardTitle) {
       const c = normTitle(cardTitle);
       if (!c) return null;
       for (const e of aiExcluded) {
-        if (!e.key) continue;
-        if (e.key === c) return e;
-        const n = Math.min(50, c.length, e.key.length);
-        if (n >= 25 && c.slice(0, n) === e.key.slice(0, n)) return e;
+        if (titleMatches(c, e.key)) return e;
       }
       return null;
     }
@@ -2801,10 +2825,12 @@
     // columns (items: { work, ex, claimLabel? }), grouped by claim when labels
     // are present (compare); (b) fallback list of excluded_studies entries the
     // conservative matcher never matched to a rendered card. Closed by default.
-    function renderExcludedSection(items, key, filename) {
+    // pool (optional, [{ work, claimLabel? }]) only fills the export metadata
+    // of unmatched entries; the rendered section does not change.
+    function renderExcludedSection(items, key, filename, pool) {
       const matched = new Set(items.map(i => i.ex));
       const unmatched = aiExcluded.filter(e => !matched.has(e));
-      lastData[key] = excludedRows(items, unmatched);
+      lastData[key] = excludedRows(items, unmatched, pool);
       const total = items.length + unmatched.length;
       if (!total) return '';
       let body = metaRow(plural(total, 'excluded study', 'excluded studies') + ' with reasons', key, filename);
@@ -2936,7 +2962,8 @@
             ${heuristicScoreNote()}
             ${metaRow(plural(studies.length, 'study', 'studies') + ' shown', 'consensus_studies', 'corpova-consensus-studies.json')}
             ${groups}
-          </div>${renderAllStudiesSection(result.all_studies, 'consensus_all', 'corpova-consensus-all-studies.json')}${renderExcludedSection(sink, 'consensus_excluded', 'corpova-consensus-excluded.json')}`;
+          </div>${renderAllStudiesSection(result.all_studies, 'consensus_all', 'corpova-consensus-all-studies.json')}${renderExcludedSection(sink, 'consensus_excluded', 'corpova-consensus-excluded.json',
+            (Array.isArray(result.all_studies) ? result.all_studies : []).map(work => ({ work })))}`;
       }
 
       if (endpoint === 'evidence') {
@@ -3048,7 +3075,8 @@
         html += renderAllStudiesSection(
           allA.concat(allB), 'compare_all', 'corpova-compare-all-studies.json',
           allA.map(() => labelA).concat(allB.map(() => labelB)));
-        return html + renderExcludedSection(labeled, 'compare_excluded', 'corpova-compare-excluded.json');
+        return html + renderExcludedSection(labeled, 'compare_excluded', 'corpova-compare-excluded.json',
+          comparePool(allA, labelA, allB, labelB));
       }
 
       // gaps: CLI returns { query, analyzed, latest_year, has_rct_or_stronger, findings:[{kind,detail}] }
