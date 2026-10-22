@@ -2162,12 +2162,16 @@
       // summary rows already print the label in that text, so scraping it back
       // duplicated the label, and the row-count badge leaked into the title.
       const title = bibEsc(label + (query ? ': ' + query : ''));
+      // The verdict export is one summary row; its note counts the analysed
+      // studies instead, which is what "1 record" was understating.
+      const studies = key === 'consensus_verdict' && rows && rows[0] ? rows[0].studies_analyzed : undefined;
       return '@misc{' + uniqueKey(base, used) + ',\n' +
         '  title  = {' + title + '},\n' +
         '  author = {{Corpova}},\n' +
         '  year   = {' + y + '},\n' +
         '  howpublished = {Corpova research analytics},\n' +
-        '  note   = {Evidence analysis of ' + plural(rows ? rows.length : 0, 'record') +
+        '  note   = {Evidence analysis of ' + (Number.isFinite(studies)
+          ? plural(studies, 'study', 'studies') : plural(rows ? rows.length : 0, 'record')) +
           '; underlying publication metadata from OpenAlex (CC0)},\n' +
         '  url    = {' + window.location.origin + '/}\n' +
         '}\n';
@@ -2295,14 +2299,29 @@
         year: w.year || '',
         citations: w.cited_by_count || 0,
         design: w.design || '', stance: w.stance || '',
-        stance_confidence: w.stance_confidence != null ? w.stance_confidence : '',
+        // Rounded like fx() on screen (2 decimals) so the file does not carry
+        // float noise such as 0.8999999999999999; non-numbers pass through.
+        stance_confidence: Number.isFinite(w.stance_confidence) ? Number(w.stance_confidence.toFixed(2))
+          : (w.stance_confidence != null ? w.stance_confidence : ''),
         // Empty string, not undefined: a missing column in one row would shift
         // the CSV header alignment for every other row.
         retraction: w.retraction || '',
         doi: w.doi || '', group: group
       };
-      if (claim !== undefined) row.claim = claim;
+      if (claim !== undefined) {
+        const c = splitClaimLabel(claim);
+        row.claim = c.claim;
+        row.claim_side = c.side;
+      }
       return row;
+    }
+
+    // Compare labels read "Claim A: <text>"; exports split them into the plain
+    // claim text and its side so all three compare files share one shape.
+    // Anything else is returned unchanged with an empty side.
+    function splitClaimLabel(label) {
+      const m = /^Claim ([AB]): ([\s\S]*)$/.exec(String(label));
+      return m ? { claim: m[2], side: m[1] } : { claim: label, side: '' };
     }
 
     // Kept (non-excluded) studies from a supporting/refuting pair; the sink
@@ -2927,7 +2946,7 @@
             consensus_score: result.consensus_score, confidence: result.confidence,
             evidence_strength: result.evidence_strength || '', apex_design: result.apex_design || '',
             studies_analyzed: result.study_count,
-            relevant_count: result.relevant_count,
+            relevant_count: result.relevant_count != null ? result.relevant_count : null,
             supporting: result.supporting, refuting: result.refuting,
             mixed: result.mixed, inconclusive: result.inconclusive,
             method: result.stance_method || '',
@@ -3032,7 +3051,7 @@
         const scoped = filterRan(stanceSource) && scope && scope.mode === 'compare';
         const card = (x, sink, fallbackLabel, scopeNote) => {
           const groups = renderStudyGroups(x.top_supporting, x.top_refuting, sink);
-          const rows = keptRows(x.top_supporting, x.top_refuting, sink, x.claim || fallbackLabel);
+          const rows = keptRows(x.top_supporting, x.top_refuting, sink, `${fallbackLabel}: ${x.claim || ''}`);
           studyRowsAll.push(...rows);
           return `
           <div class="result-card" style="--color: #ec4899;">
