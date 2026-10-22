@@ -1013,23 +1013,23 @@
 
   <!-- BENTO GRID -->
   <section class="bento-grid">
-    <div class="bento-card consensus" onclick="openModal('consensus')">
+    <div class="bento-card consensus" data-action="openModal" data-endpoint="consensus">
       <div class="bento-icon">📊</div>
       <div class="bento-label">Consensus</div>
     </div>
-    <div class="bento-card evidence" onclick="openModal('evidence')">
+    <div class="bento-card evidence" data-action="openModal" data-endpoint="evidence">
       <div class="bento-icon">🔬</div>
       <div class="bento-label">Evidence Pyramid</div>
     </div>
-    <div class="bento-card compare" onclick="openModal('compare')">
+    <div class="bento-card compare" data-action="openModal" data-endpoint="compare">
       <div class="bento-icon">⚖️</div>
       <div class="bento-label">Compare Claims</div>
     </div>
-    <div class="bento-card gaps" onclick="openModal('gaps')">
+    <div class="bento-card gaps" data-action="openModal" data-endpoint="gaps">
       <div class="bento-icon">🔍</div>
       <div class="bento-label">Research Gaps</div>
     </div>
-    <div class="bento-card controversies" onclick="openModal('controversies')">
+    <div class="bento-card controversies" data-action="openModal" data-endpoint="controversies">
       <div class="bento-icon">⚡</div>
       <div class="bento-label">Controversies</div>
     </div>
@@ -1041,7 +1041,7 @@
     <div class="modal-content" style="--color: #00d4ff;">
       <div class="modal-header">
         <h2>📊 Consensus Analysis</h2>
-        <button class="close-btn" onclick="closeModal('consensus')">&times;</button>
+        <button class="close-btn" data-action="closeModal" data-endpoint="consensus">&times;</button>
       </div>
       <div id="consensusForm" class="form-group">
         <label>Claim</label>
@@ -1098,7 +1098,7 @@
           <div class="limit-panel-body" id="consensusLimitBody"></div>
           <div class="limit-panel-warn" id="consensusLimitWarn"></div>
         </div>
-        <button class="btn" onclick="runAnalysis('consensus')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn" data-action="runAnalysis" data-endpoint="consensus" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="consensusResults" style="display: none;"></div>
     </div>
@@ -1109,7 +1109,7 @@
     <div class="modal-content" style="--color: #7c3aed;">
       <div class="modal-header">
         <h2>🔬 Evidence Pyramid</h2>
-        <button class="close-btn" onclick="closeModal('evidence')">&times;</button>
+        <button class="close-btn" data-action="closeModal" data-endpoint="evidence">&times;</button>
       </div>
       <div id="evidenceForm" class="form-group">
         <label>Claim</label>
@@ -1166,7 +1166,7 @@
           <div class="limit-panel-body" id="evidenceLimitBody"></div>
           <div class="limit-panel-warn" id="evidenceLimitWarn"></div>
         </div>
-        <button class="btn" onclick="runAnalysis('evidence')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn" data-action="runAnalysis" data-endpoint="evidence" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="evidenceResults" style="display: none;"></div>
     </div>
@@ -1177,7 +1177,7 @@
     <div class="modal-content" style="--color: #ec4899;">
       <div class="modal-header">
         <h2>⚖️ Compare Claims</h2>
-        <button class="close-btn" onclick="closeModal('compare')">&times;</button>
+        <button class="close-btn" data-action="closeModal" data-endpoint="compare">&times;</button>
       </div>
       <div id="compareForm" class="form-group">
         <label>Claim 1</label>
@@ -1236,7 +1236,7 @@
           <div class="limit-panel-body" id="compareLimitBody"></div>
           <div class="limit-panel-warn" id="compareLimitWarn"></div>
         </div>
-        <button class="btn" onclick="runAnalysis('compare')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn" data-action="runAnalysis" data-endpoint="compare" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="compareResults" style="display: none;"></div>
     </div>
@@ -1247,7 +1247,7 @@
     <div class="modal-content" style="--color: #fbbf24;">
       <div class="modal-header">
         <h2>🔍 Research Gaps</h2>
-        <button class="close-btn" onclick="closeModal('gaps')">&times;</button>
+        <button class="close-btn" data-action="closeModal" data-endpoint="gaps">&times;</button>
       </div>
       <div id="gapsForm" class="form-group">
         <label>Claim</label>
@@ -1304,7 +1304,7 @@
           <div class="limit-panel-body" id="gapsLimitBody"></div>
           <div class="limit-panel-warn" id="gapsLimitWarn"></div>
         </div>
-        <button class="btn" onclick="runAnalysis('gaps')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn" data-action="runAnalysis" data-endpoint="gaps" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="gapsResults" style="display: none;"></div>
     </div>
@@ -1315,7 +1315,7 @@
     <div class="modal-content" style="--color: #ef4444;">
       <div class="modal-header">
         <h2>⚡ Controversies</h2>
-        <button class="close-btn" onclick="closeModal('controversies')">&times;</button>
+        <button class="close-btn" data-action="closeModal" data-endpoint="controversies">&times;</button>
       </div>
       <div id="controversiesForm" class="form-group">
         <label>Claim</label>
@@ -1372,7 +1372,7 @@
           <div class="limit-panel-body" id="controversiesLimitBody"></div>
           <div class="limit-panel-warn" id="controversiesLimitWarn"></div>
         </div>
-        <button class="btn" onclick="runAnalysis('controversies')" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn" data-action="runAnalysis" data-endpoint="controversies" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
       </div>
       <div id="controversiesResults" style="display: none;"></div>
     </div>
@@ -2236,13 +2236,13 @@
         // Line 1: quick filter (when present) + BibTeX + Excel
         '<span class="dl-line">' +
         (withFilter ? '<input class="qfilter" type="text" placeholder="🔍 Filter results…">' : '') +
-        '<button class="dl" title="' + bibTitle + '" onclick="downloadBibTeX(\'' + key + '\',\'' + bibName + '\')">⬇ BibTeX</button>' +
-        '<button class="dl" onclick="downloadXLSX(\'' + key + '\',\'' + xlsxName + '\')">⬇ Excel</button>' +
+        '<button class="dl" title="' + bibTitle + '" data-action="downloadBibTeX" data-key="' + key + '" data-filename="' + bibName + '">⬇ BibTeX</button>' +
+        '<button class="dl" data-action="downloadXLSX" data-key="' + key + '" data-filename="' + xlsxName + '">⬇ Excel</button>' +
         '</span>' +
         // Line 2: CSV + JSON
         '<span class="dl-line">' +
-        '<button class="dl" onclick="downloadCSV(\'' + key + '\',\'' + csvName + '\')">⬇ CSV</button>' +
-        '<button class="dl" onclick="downloadJSON(\'' + key + '\',\'' + filename + '\')">⬇ JSON</button>' +
+        '<button class="dl" data-action="downloadCSV" data-key="' + key + '" data-filename="' + csvName + '">⬇ CSV</button>' +
+        '<button class="dl" data-action="downloadJSON" data-key="' + key + '" data-filename="' + filename + '">⬇ JSON</button>' +
         '</span>' +
         '</span></div>';
     }
@@ -2417,7 +2417,7 @@
     }
 
     function newAnalysisBtn(endpoint) {
-      return `<button class="back-btn" onclick="resetModal('${endpoint}')">← New analysis</button>`;
+      return `<button class="back-btn" data-action="resetModal" data-endpoint="${endpoint}">← New analysis</button>`;
     }
 
     // Bridge to the module script at the end of this file: the sign-in button
@@ -2440,7 +2440,7 @@
         // The raw error ("missing/invalid token") tells the user nothing they
         // can act on, and the remedy is always the same, so it is not shown.
         const btn = (window.pubveraAuth && window.pubveraAuth.enabled)
-          ? '<button class="btn" style="margin-top: 1rem;" onclick="pubveraSignIn()">Sign in with Google</button>'
+          ? '<button class="btn" style="margin-top: 1rem;" data-action="pubveraSignIn">Sign in with Google</button>'
           : '';
         return `<div class="result-card"><h3>Sign-in required</h3><p>Please sign in to run an analysis.</p>${btn}</div>`;
       }
@@ -3283,6 +3283,28 @@
       });
       const parent = rows[0] && rows[0].parentElement;
       if (parent) rows.forEach(r => parent.appendChild(r));
+    });
+
+    // One delegated click handler for every control that carries a data-action
+    // attribute, static or built at run time. A strict CSP blocks inline event
+    // handler attributes, so arguments travel in data-* attributes instead.
+    // Unknown action names do nothing.
+    const clickActions = {
+      openModal: el => openModal(el.dataset.endpoint),
+      closeModal: el => closeModal(el.dataset.endpoint),
+      runAnalysis: el => runAnalysis(el.dataset.endpoint),
+      resetModal: el => resetModal(el.dataset.endpoint),
+      downloadBibTeX: el => downloadBibTeX(el.dataset.key, el.dataset.filename),
+      downloadXLSX: el => downloadXLSX(el.dataset.key, el.dataset.filename),
+      downloadCSV: el => downloadCSV(el.dataset.key, el.dataset.filename),
+      downloadJSON: el => downloadJSON(el.dataset.key, el.dataset.filename),
+      pubveraSignIn: () => pubveraSignIn(),
+    };
+    document.addEventListener('click', e => {
+      const el = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
+      if (!el) return;
+      const action = Object.prototype.hasOwnProperty.call(clickActions, el.dataset.action) ? clickActions[el.dataset.action] : null;
+      if (action) action(el, e);
     });
 
     // Load settings on page load
