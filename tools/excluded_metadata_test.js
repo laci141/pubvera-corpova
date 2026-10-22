@@ -43,7 +43,7 @@ function check(label, ok, detail) {
 }
 
 // Present before and after the change: a missing one means the scan broke.
-const required = ["cleanTitle", "studyRow", "normTitle", "findExclusion", "excludedRows"];
+const required = ["cleanTitle", "splitClaimLabel", "studyRow", "normTitle", "findExclusion", "excludedRows"];
 // Added by the change: missing ones are reported as FAIL checks (RED), not a crash.
 const added = ["titleMatches", "comparePool"];
 const srcs = [];
@@ -100,7 +100,7 @@ try {
   {
     const pool = typeof comparePool === "function" ? comparePool([], "Claim A: y", [W2], "Claim B: x") : [];
     const r = plain(excludedRows([], [entry(T2, "animal study")], pool))[0] || {};
-    check("2 compare pool B item -> claim \"Claim B: x\"", r.claim === "Claim B: x", r.claim);
+    check("2 compare pool B item -> claim \"x\", claim_side \"B\"", r.claim === "x" && r.claim_side === "B", r.claim);
   }
 
   // 3 title in both A and B -> A wins
@@ -109,7 +109,7 @@ try {
     const wB = Object.assign({}, W2, { doi: "10.1/b" });
     const pool = typeof comparePool === "function" ? comparePool([wA], "Claim A: y", [wB], "Claim B: x") : [];
     const r = plain(excludedRows([], [entry(T2, "r")], pool))[0] || {};
-    check("3a title in A and B -> claim is the A label", r.claim === "Claim A: y", r.claim);
+    check("3a title in A and B -> claim is the A claim", r.claim === "y" && r.claim_side === "A", r.claim);
     check("3b title in A and B -> A work's doi", r.doi === "10.1/a", r.doi);
   }
 
@@ -149,7 +149,7 @@ try {
     const r = withPool[0] || {};
     check("8a rendered item -> matched === true", r.matched === true, r.matched);
     check("8b rendered item -> fields unchanged by pool", JSON.stringify(withPool) === JSON.stringify(want), withPool);
-    check("8c rendered item -> metadata + claim + reason", r.doi === W1.doi && r.claim === "Claim A: y" && r.exclusion_reason === "dup", r);
+    check("8c rendered item -> metadata + claim + reason", r.doi === W1.doi && r.claim === "y" && r.claim_side === "A" && r.exclusion_reason === "dup", r);
   }
 
   // 9 findExclusion behaviour unchanged

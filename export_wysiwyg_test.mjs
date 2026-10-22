@@ -681,8 +681,8 @@ const rows11 = ctx(`lastData.compare_all`);
 // 11.1 -- the overwrite trap: BOTH claims' rows survive one shared key.
 check('S11 compare_all row count is A + B', rows11.length, A11.length + B11.length);
 check('S11 compare_all carries both claim labels',
-  [...new Set(rows11.map(r => r.claim))].sort(),
-  [`Claim A: ${CLAIM_A11}`, `Claim B: ${CLAIM_B11}`].sort());
+  [...new Set(rows11.map(r => `${r.claim_side}|${r.claim}`))].sort(),
+  [`A|${CLAIM_A11}`, `B|${CLAIM_B11}`].sort());
 check('S11 compare_all keeps every title, in claim order',
   rows11.map(r => r.title), [...A11, ...B11].map(w => w.title));
 
@@ -712,7 +712,7 @@ const htmlEmptyA = renderCompare11([], B11);
 const rowsEmptyA = ctx(`lastData.compare_all`);
 check('S11 empty claim A: rows are claim B only', rowsEmptyA.map(r => r.title), B11.map(w => w.title));
 check('S11 empty claim A: every row still labelled claim B',
-  [...new Set(rowsEmptyA.map(r => r.claim))], [`Claim B: ${CLAIM_B11}`]);
+  [...new Set(rowsEmptyA.map(r => `${r.claim_side}|${r.claim}`))], [`B|${CLAIM_B11}`]);
 check('S11 empty claim A: section still rendered',
   htmlEmptyA.includes('<summary>All analyzed studies (3)</summary>'), true);
 check('S11 empty claim A: only claim B gets a subhead',
@@ -729,7 +729,7 @@ ctx(`downloadCSV('compare_all','ca.csv'); downloadJSON('compare_all','ca.json');
 const [csv11, json11] = downloads.slice(-2);
 check('S11 CSV has a claim column', csvCols(csv11.text).includes('claim'), true);
 check('S11 CSV carries both claim labels',
-  [`Claim A: ${CLAIM_A11}`, `Claim B: ${CLAIM_B11}`].filter(l => !csv11.text.includes(l)), []);
+  [CLAIM_A11, CLAIM_B11].filter(l => !csv11.text.includes(l)), []);
 check('S11 JSON exports every row', JSON.parse(json11.text).rows.length, 6);
 check('S11 corpus block resolves through compare_summary',
   JSON.parse(json11.text).export.corpus, { retrieved: A11.length + B11.length, displayed: 6 });
