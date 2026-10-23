@@ -333,6 +333,8 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		// present next to the binary.
 		if data, err := os.ReadFile("index.html"); err == nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			// Revalidate on every load so a deploy is visible immediately.
+			w.Header().Set("Cache-Control", "no-cache")
 			_, _ = w.Write(data)
 			return
 		}
