@@ -802,6 +802,7 @@
        es kepernyomeretenkent mashol torne el. */
     .dl-group{display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end}
     .dl-line{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+    .abs-toggle{display:inline-flex;gap:4px;align-items:center;font-size:.75rem;color:#99a;white-space:nowrap;cursor:pointer}
     .qfilter{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.16);border-radius:999px;
       padding:4px 14px;color:#e8eef7;font-size:.78rem;width:190px;max-width:100%;min-width:0}
 
@@ -1395,7 +1396,11 @@
 
   <script>
     // localStorage integration
-    const storageKeys = { key: 'sc_llm_key', keyRemember: 'sc_llm_key_remember', provider: 'sc_provider', model: 'sc_model' };
+    const storageKeys = { key: 'sc_llm_key', keyRemember: 'sc_llm_key_remember', provider: 'sc_provider', model: 'sc_model', abstracts: 'sc_export_abstracts' };
+    // "Include abstracts" export toggle, on by default. Only '0' turns it off,
+    // so a missing or unreadable value keeps the current exports unchanged.
+    let includeAbstracts = true;
+    try { includeAbstracts = localStorage.getItem(storageKeys.abstracts) !== '0'; } catch (_) { /* storage blocked: keep the default */ }
     const keyEndpoints = ['consensus', 'evidence', 'compare', 'gaps', 'controversies'];
 
     // The BYOK key lives only in the modal inputs unless the user ticks
@@ -1736,14 +1741,36 @@
 
     function registerView(key, fn) { viewProviders[key] = fn; }
 
+    // The rows without abstract / abstract_truncated when the "Include
+    // abstracts" toggle is off. The rows are lastData's own objects (the view
+    // providers hand them out by reference), so they are copied, never
+    // mutated: the next export with the toggle back on still needs them.
+    function stripAbstracts(rows, include) {
+      if (include || !Array.isArray(rows)) return rows;
+      return rows.map(r => {
+        if (!r || typeof r !== 'object') return r;
+        const out = {};
+        Object.keys(r).forEach(k => { if (k !== 'abstract' && k !== 'abstract_truncated') out[k] = r[k]; });
+        return out;
+      });
+    }
+
+    // Toggle handler: one global setting, so every toggle on the page follows.
+    // A storage failure only loses persistence, never the click.
+    function setIncludeAbstracts(on) {
+      includeAbstracts = !!on;
+      try { localStorage.setItem(storageKeys.abstracts, includeAbstracts ? '1' : '0'); } catch (_) { /* not persisted */ }
+      document.querySelectorAll('[data-action="toggleAbstracts"]').forEach(cb => { cb.checked = includeAbstracts; });
+    }
+
     function exportRows(key) {
       const p = viewProviders[key];
       if (typeof p === 'function') {
         const v = p() || {};
         const filters = Array.isArray(v.filters) ? v.filters : [];
-        return { rows: Array.isArray(v.rows) ? v.rows : [], filters: filters, scope: filters.join(' · ') };
+        return { rows: stripAbstracts(Array.isArray(v.rows) ? v.rows : [], includeAbstracts), filters: filters, scope: filters.join(' · ') };
       }
-      return { rows: rowsFromLastData(key) || [], filters: [], scope: '' }; // fallback: unfiltered module
+      return { rows: stripAbstracts(rowsFromLastData(key) || [], includeAbstracts), filters: [], scope: '' }; // fallback: unfiltered module
     }
 
     // The retrieved corpus size for an export key, or undefined when unknown.
@@ -2236,14 +2263,20 @@
       const csvName = String(filename).replace(/\.json$/i, '.csv');
       const xlsxName = String(filename).replace(/\.json$/i, '.xlsx');
       const bibName = String(filename).replace(/\.json$/i, '.bib');
-      const bibTitle = /_studies$|_excluded$|_all$/.test(key)
+      const studyList = /_studies$|_excluded$|_all$/.test(key);
+      const bibTitle = studyList
         ? 'BibTeX citations for these papers'
         : 'BibTeX citation for this analysis (@misc)';
+      // Study lists only: they are the rows that carry abstracts.
+      const absToggle = studyList
+        ? '<label class="abs-toggle"><input type="checkbox" data-action="toggleAbstracts"' + (includeAbstracts ? ' checked' : '') + '> Include abstracts</label>'
+        : '';
       return '<div class="meta-row" data-key="' + key + '"><span class="meta">' + text + '<span class="qcount"></span></span>' +
         '<span class="dl-group">' +
-        // Line 1: quick filter (when present) + BibTeX + Excel
+        // Line 1: quick filter (when present) + abstracts toggle (study lists) + BibTeX + Excel
         '<span class="dl-line">' +
         (withFilter ? '<input class="qfilter" type="text" placeholder="🔍 Filter results…">' : '') +
+        absToggle +
         '<button class="dl" title="' + bibTitle + '" data-action="downloadBibTeX" data-key="' + key + '" data-filename="' + bibName + '">⬇ BibTeX</button>' +
         '<button class="dl" data-action="downloadXLSX" data-key="' + key + '" data-filename="' + xlsxName + '">⬇ Excel</button>' +
         '</span>' +
@@ -3354,6 +3387,7 @@
       downloadXLSX: el => downloadXLSX(el.dataset.key, el.dataset.filename),
       downloadCSV: el => downloadCSV(el.dataset.key, el.dataset.filename),
       downloadJSON: el => downloadJSON(el.dataset.key, el.dataset.filename),
+      toggleAbstracts: el => setIncludeAbstracts(el.checked),
       pubveraSignIn: () => pubveraSignIn(),
     };
     document.addEventListener('click', e => {
