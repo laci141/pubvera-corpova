@@ -72,7 +72,7 @@ function dataCell(v) {
 try {
   check("1 \"=1+1\" -> '=1+1", dataCell("=1+1") === "'=1+1", dataCell("=1+1"));
   check("2 \"+1\" -> '+1", dataCell("+1") === "'+1", dataCell("+1"));
-  check("3 \"-1\" (string) -> '-1", dataCell("-1") === "'-1", dataCell("-1"));
+  check("3 \"-1\" (strictly numeric string) unchanged", dataCell("-1") === "-1", dataCell("-1"));
   check("4 \"@SUM(A1)\" -> '@SUM(A1)", dataCell("@SUM(A1)") === "'@SUM(A1)", dataCell("@SUM(A1)"));
   check("5 \"\\tx\" -> '\\tx", dataCell("\tx") === "'\tx", dataCell("\tx"));
   check("6 \"\\rx\" -> guarded and quoted", dataCell("\rx") === "\"'\rx\"", dataCell("\rx"));
@@ -80,6 +80,18 @@ try {
   check("8 number -0.5 unchanged", dataCell(-0.5) === "-0.5", dataCell(-0.5));
   check("9 number 0.9 unchanged", dataCell(0.9) === "0.9", dataCell(0.9));
   check("10 \"normal text\" unchanged", dataCell("normal text") === "normal text", dataCell("normal text"));
+
+  check("14a \" =1+1\" (leading space) -> ' =1+1", dataCell(" =1+1") === "' =1+1", dataCell(" =1+1"));
+  check("14b \"\\n=1+1\" (leading LF) -> guarded and quoted", dataCell("\n=1+1") === "\"'\n=1+1\"", dataCell("\n=1+1"));
+  check("15a full-width \\uFF1D -> prefixed", dataCell("\uFF1D1+1") === "'\uFF1D1+1", dataCell("\uFF1D1+1"));
+  check("15b full-width \\uFF0B -> prefixed", dataCell("\uFF0B1") === "'\uFF0B1", dataCell("\uFF0B1"));
+  check("15c full-width \\uFF0D -> prefixed", dataCell("\uFF0D1") === "'\uFF0D1", dataCell("\uFF0D1"));
+  check("15d full-width \\uFF20 -> prefixed", dataCell("\uFF20SUM(A1)") === "'\uFF20SUM(A1)", dataCell("\uFF20SUM(A1)"));
+  check("16a number -5 unchanged", dataCell(-5) === "-5", dataCell(-5));
+  check("16b \"-5\" unchanged", dataCell("-5") === "-5", dataCell("-5"));
+  check("16c \"3.14\" unchanged", dataCell("3.14") === "3.14", dataCell("3.14"));
+  check("16d \"-0.5\" unchanged", dataCell("-0.5") === "-0.5", dataCell("-0.5"));
+  check("16e \"-1+2\" (not strictly numeric) -> '-1+2", dataCell("-1+2") === "'-1+2", dataCell("-1+2"));
 
   const h1 = toCSV([{ a: 1 }], "Query: =1+1").slice(BOM.length).split("\r\n")[1];
   check("11a headerLine \"Query: =1+1\" unchanged", h1 === "Query: =1+1", h1);
