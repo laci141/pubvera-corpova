@@ -792,27 +792,42 @@
        panel szelehez -- mobilon ez volt a legzavarobb. */
     .meta-row{display:flex;justify-content:space-between;align-items:flex-start;
       margin-bottom:.6rem;gap:12px;flex-wrap:wrap;padding-left:3px;padding-right:3px}
-    .meta{font-size:.82rem;color:#99a}
+    .meta{font-size:.82rem;color:#99a;min-width:0;overflow-wrap:anywhere}
     .dl{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#cdd6ea;
       padding:4px 14px;border-radius:999px;font-size:.75rem;font-weight:600;cursor:pointer;
       transition:.2s;white-space:nowrap;flex-shrink:0}
     .dl:hover{background:rgba(255,255,255,.15);border-color:var(--color,#00d4ff);color:#fff}
-    /* Ket fix sor, nem wrap: 1. sor szuro+BibTeX+Excel, 2. sor CSV+JSON.
-       A wrap azert nem jo, mert a sortores a szuromezo szelessegetol fuggne,
-       es kepernyomeretenkent mashol torne el. */
-    .dl-group{display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end}
-    .dl-line{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+    /* One wrapping row: quick filter, abstracts toggle, Export menu. The two
+       .dl-line spans stay in the markup (line 1 = filter + toggle, line 2 =
+       menu) but add no box of their own, so their children wrap as one row. */
+    .dl-group{display:flex;flex-wrap:wrap;gap:8px;min-width:0;max-width:100%;align-items:center;justify-content:flex-end}
+    .dl-line{display:contents}
     .abs-toggle{display:inline-flex;gap:4px;align-items:center;font-size:.75rem;color:#99a;white-space:nowrap;cursor:pointer}
     .qfilter{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.16);border-radius:999px;
       padding:4px 14px;color:#e8eef7;font-size:.78rem;width:190px;max-width:100%;min-width:0}
+    /* Export menu (WAI-ARIA menu button). The panel is ONE solid colour: a
+       gradient leaves background-color transparent. rgba(26,26,46,.9) is the
+       page's own #1a1a2e (body gradient end, .modal-content background). */
+    .dl-menu-wrap{position:relative;display:inline-block;margin-left:auto}
+    .dl-trigger{min-height:44px;min-width:44px}
+    .dl-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:50;min-width:150px;max-width:calc(100vw - 32px);
+      padding:6px;border:1px solid rgba(255,255,255,.14);border-radius:14px;display:flex;flex-direction:column;gap:2px;
+      background:rgba(26,26,46,.9);box-shadow:0 14px 36px -12px rgba(0,0,0,.8)}
+    .dl-menu[hidden]{display:none}
+    .dl-menu [role="menuitem"]{display:block;width:100%;min-height:44px;text-align:left;font:inherit;font-size:.82rem;
+      font-weight:600;color:#e8eef7;background:none;border:0;border-radius:8px;padding:8px 12px;cursor:pointer}
+    .dl-menu [role="menuitem"]:hover{background:rgba(255,255,255,.14)}
+    .dl-menu [role="menuitem"]:focus-visible{outline:2px solid #fff;outline-offset:-2px;background:rgba(255,255,255,.14)}
+    /* Long titles, DOIs and AI reasons must not push the page sideways on phones. */
+    .study-title,.excluded-title,.excluded-reason{overflow-wrap:anywhere}
 
-    /* Mobil: a gombsor sajat sorba kerul es kitolti a szelesseget, a szuromezo
-       pedig rugalmasan zsugorodik, hogy a BibTeX/Excel par ne csusszon ki. */
+    /* Phones: the toolbar drops below the count text and fills the width; the
+       filter takes its own full row and the Export trigger goes to the next
+       line, right-aligned so the panel (right:0) opens inside the viewport. */
     @media (max-width: 600px) {
       .meta-row{flex-direction:column;align-items:stretch}
-      .dl-group{align-items:stretch;width:100%}
-      .dl-line{justify-content:flex-start;width:100%}
-      .qfilter{flex:1 1 auto;width:auto}
+      .dl-group{justify-content:flex-start;width:100%}
+      .qfilter{flex:1 1 100%;width:auto;min-width:0}
       .dl{flex:0 0 auto}
     }
     .qfilter:focus{outline:none;border-color:var(--color,#00d4ff)}
@@ -2256,8 +2271,11 @@
     }
 
     // One shared header row per result block: count text + quick filter +
-    // download buttons. opts.filter:false drops the filter input (used on
-    // one-row summary exports where filtering makes no sense).
+    // one Export menu button. opts.filter:false drops the filter input (used on
+    // one-row summary exports where filtering makes no sense). Panel ids come
+    // from a counter: one page holds several toolbars, and compare's two claim
+    // cards share one export key. The counter lives on metaRow itself so tests
+    // that extract metaRow alone still run.
     function metaRow(text, key, filename, opts) {
       const withFilter = !opts || opts.filter !== false;
       const csvName = String(filename).replace(/\.json$/i, '.csv');
@@ -2271,20 +2289,24 @@
       const absToggle = studyList
         ? '<label class="abs-toggle"><input type="checkbox" data-action="toggleAbstracts"' + (includeAbstracts ? ' checked' : '') + '> Include abstracts</label>'
         : '';
+      metaRow.menuSeq = (metaRow.menuSeq || 0) + 1;
+      const menuId = 'dl-menu-' + metaRow.menuSeq;
       return '<div class="meta-row" data-key="' + key + '"><span class="meta">' + text + '<span class="qcount"></span></span>' +
         '<span class="dl-group">' +
-        // Line 1: quick filter (when present) + abstracts toggle (study lists) + BibTeX + Excel
+        // Line 1: quick filter (when present) + abstracts toggle (study lists)
         '<span class="dl-line">' +
         (withFilter ? '<input class="qfilter" type="text" placeholder="🔍 Filter results…">' : '') +
         absToggle +
-        '<button class="dl" title="' + bibTitle + '" data-action="downloadBibTeX" data-key="' + key + '" data-filename="' + bibName + '">⬇ BibTeX</button>' +
-        '<button class="dl" data-action="downloadXLSX" data-key="' + key + '" data-filename="' + xlsxName + '">⬇ Excel</button>' +
         '</span>' +
-        // Line 2: CSV + JSON
-        '<span class="dl-line">' +
-        '<button class="dl" data-action="downloadCSV" data-key="' + key + '" data-filename="' + csvName + '">⬇ CSV</button>' +
-        '<button class="dl" data-action="downloadJSON" data-key="' + key + '" data-filename="' + filename + '">⬇ JSON</button>' +
-        '</span>' +
+        // Line 2: the Export menu button and its panel
+        '<span class="dl-line"><span class="dl-menu-wrap">' +
+        '<button type="button" class="dl dl-trigger" data-action="toggleExportMenu" aria-haspopup="menu" aria-expanded="false" aria-controls="' + menuId + '">⬇ Export ▾</button>' +
+        '<span class="dl-menu" role="menu" id="' + menuId + '" hidden>' +
+        '<button type="button" role="menuitem" data-action="downloadXLSX" data-key="' + key + '" data-filename="' + xlsxName + '">Excel</button>' +
+        '<button type="button" role="menuitem" data-action="downloadCSV" data-key="' + key + '" data-filename="' + csvName + '">CSV</button>' +
+        '<button type="button" role="menuitem" data-action="downloadJSON" data-key="' + key + '" data-filename="' + filename + '">JSON</button>' +
+        '<button type="button" role="menuitem" title="' + bibTitle + '" data-action="downloadBibTeX" data-key="' + key + '" data-filename="' + bibName + '">BibTeX</button>' +
+        '</span></span></span>' +
         '</span></div>';
     }
 
@@ -3388,6 +3410,7 @@
       downloadCSV: el => downloadCSV(el.dataset.key, el.dataset.filename),
       downloadJSON: el => downloadJSON(el.dataset.key, el.dataset.filename),
       toggleAbstracts: el => setIncludeAbstracts(el.checked),
+      toggleExportMenu: el => toggleExportMenu(el),
       pubveraSignIn: () => pubveraSignIn(),
     };
     document.addEventListener('click', e => {
@@ -3395,6 +3418,67 @@
       if (!el) return;
       const action = Object.prototype.hasOwnProperty.call(clickActions, el.dataset.action) ? clickActions[el.dataset.action] : null;
       if (action) action(el, e);
+    });
+
+    // ── Export menu (WAI-ARIA APG menu button). The trigger opens through
+    // clickActions.toggleExportMenu; the items keep their download data-action,
+    // so the listener above runs the download before the one below closes the
+    // menu. Every close path ends in closeExportMenus(opener), so hidden,
+    // aria-expanded and focus cannot drift apart. The opener is passed
+    // explicitly: WebKit does not focus a button on mouse click.
+    function closeExportMenus(opener) {
+      document.querySelectorAll('.dl-menu:not([hidden])').forEach(m => {
+        m.hidden = true;
+        const t = document.querySelector('[aria-controls="' + m.id + '"]');
+        if (t) t.setAttribute('aria-expanded', 'false');
+      });
+      if (opener) opener.focus();
+    }
+    function toggleExportMenu(btn) {
+      const menu = document.getElementById(btn.getAttribute('aria-controls'));
+      if (!menu) return;
+      const wasOpen = !menu.hidden;
+      closeExportMenus(null); // at most one menu open
+      if (wasOpen) { btn.focus(); return; }
+      menu.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      const first = menu.querySelector('[role="menuitem"]');
+      if (first) first.focus();
+    }
+    document.addEventListener('click', e => {
+      const t = e.target;
+      if (!t || !t.closest) return;
+      const item = t.closest('.dl-menu [role="menuitem"]');
+      if (item) {
+        // The download already ran; close and return focus to this menu's trigger.
+        closeExportMenus(document.querySelector('[aria-controls="' + item.closest('.dl-menu').id + '"]'));
+        return;
+      }
+      // Untrusted clicks are ignored: triggerDownload() clicks a synthetic <a>.
+      if (e.isTrusted && !t.closest('.dl-menu-wrap')) closeExportMenus(null);
+    });
+    document.addEventListener('keydown', e => {
+      const t = e.target;
+      if (!t || !t.matches) return;
+      // Enter, Space and ArrowDown on the trigger open the menu with the first
+      // item focused; preventDefault stops the button's own click for Enter/Space.
+      if (t.matches('.dl-menu-wrap [aria-haspopup="menu"]') && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        if (e.key !== 'ArrowDown' || t.getAttribute('aria-expanded') !== 'true') toggleExportMenu(t);
+        return;
+      }
+      const menu = document.querySelector('.dl-menu:not([hidden])');
+      if (!menu) return;
+      const opener = document.querySelector('[aria-controls="' + menu.id + '"]');
+      if (e.key === 'Escape') { e.preventDefault(); closeExportMenus(opener); return; }
+      if (!menu.contains(t)) return;
+      const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+      const i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+      else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+      else if (e.key === 'Tab') closeExportMenus(opener); // focus lands on the trigger, then Tab moves on
     });
 
     // Load settings on page load
