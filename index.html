@@ -2308,7 +2308,12 @@
         // Empty string, not undefined: a missing column in one row would shift
         // the CSV header alignment for every other row.
         retraction: w.retraction || '',
-        doi: w.doi || '', group: group
+        doi: w.doi || '',
+        // The CLI caps abstracts at 1500 runes and sets abstract_truncated when
+        // it cut one. Strict === true: older CLI builds omit the field.
+        abstract: typeof w.abstract === 'string' ? w.abstract : '',
+        abstract_truncated: w.abstract_truncated === true,
+        group: group
       };
       if (claim !== undefined) {
         const c = splitClaimLabel(claim);
