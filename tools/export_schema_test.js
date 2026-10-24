@@ -50,7 +50,7 @@ function check(label, ok, detail) {
 // Present before and after the change: a missing one means the scan broke.
 const required = ["cleanTitle", "studyRow", "keptRows", "normTitle", "titleMatches", "excludedRows",
   "comparePool", "renderAllStudiesSection", "plural", "keyWords", "asciiSlug", "hash3", "uniqueKey",
-  "bibEsc", "queryFor", "analysisBibTeX", "fx"];
+  "bibEsc", "queryFor", "analysisBibTeX", "fx", "boolCell", "toCSV", "normDoi", "bibKey"];
 // Added by the change: missing ones are reported as FAIL checks (RED), not a crash.
 const added = ["splitClaimLabel"];
 const srcs = [];
@@ -67,6 +67,19 @@ for (const name of added) {
   check("0 " + name + " defined in index.html", !!s);
   if (s) srcs.push(s);
 }
+// toBibTeX opens "@misc{" / "@article{" in string literals, so the brace scan
+// overruns it; it is cut at its own closing return statement instead.
+{
+  const start = html.indexOf("function toBibTeX(");
+  const ret = start < 0 ? -1 : html.indexOf("return out.join('\\n\\n') + '\\n';", start);
+  const close = ret < 0 ? -1 : html.indexOf("}", ret);
+  if (close < 0) {
+    console.error("FAIL: toBibTeX not found in index.html - refusing to pass silently");
+    process.exit(1);
+  }
+  srcs.push(html.slice(start, close + 1));
+  required.push("toBibTeX");
+}
 const ctx = vm.createContext({
   lastData: {}, lastQueries: { consensus: "c", compare: "c" }, aiExcluded: [],
   ANALYSIS_LABEL: {}, ANALYSIS_SLUG: {}, KEY_STOPWORDS: new Set(),
@@ -80,7 +93,8 @@ try {
   console.error("FAIL: could not load functions: " + (e && e.stack || e));
   process.exit(1);
 }
-const { studyRow, keptRows, excludedRows, comparePool, renderAllStudiesSection, analysisBibTeX, normTitle, splitClaimLabel } = ctx;
+const { studyRow, keptRows, excludedRows, comparePool, renderAllStudiesSection, analysisBibTeX, normTitle, splitClaimLabel,
+  toCSV, toBibTeX } = ctx;
 if (typeof studyRow !== "function" || typeof excludedRows !== "function" || typeof analysisBibTeX !== "function") {
   console.error("FAIL: studyRow/excludedRows/analysisBibTeX did not load as functions - refusing to pass silently");
   process.exit(1);
@@ -198,6 +212,44 @@ try {
     renderAllStudiesSection([W], "consensus_all", "f.json");
     const a = plain(ctx.lastData.consensus_all || [])[0] || {};
     check("7d consensus all-studies row -> no claim / claim_side", !("claim" in a) && !("claim_side" in a), a);
+  }
+
+  // 8 abstract + abstract_truncated on every studyRow export row
+  {
+    const t = plain(studyRow({ abstract: "Text…", abstract_truncated: true }, "supporting"));
+    check("8a abstract + abstract_truncated true carried", t.abstract === "Text…" && t.abstract_truncated === true, t);
+    const e = plain(studyRow({}, "supporting"));
+    check("8b missing -> abstract \"\", abstract_truncated false (keys present)",
+      e.abstract === "" && e.abstract_truncated === false && "abstract" in e && "abstract_truncated" in e, e);
+    const y = plain(studyRow({ abstract_truncated: "yes" }, "supporting"));
+    check("8c abstract_truncated \"yes\" -> false", y.abstract_truncated === false, y.abstract_truncated);
+    const keys = Object.keys(plain(studyRow(W, "supporting")));
+    check("8 key order: doi, abstract, abstract_truncated, group",
+      keys.indexOf("abstract") === keys.indexOf("doi") + 1 &&
+      keys.indexOf("abstract_truncated") === keys.indexOf("doi") + 2 &&
+      keys.indexOf("group") === keys.indexOf("doi") + 3, keys);
+
+    const WA = Object.assign({}, W, { abstract: "Some abstract", abstract_truncated: true });
+    const ex = plain(excludedRows([{ work: WA, ex: { reason: "dup" } }],
+      [{ key: normTitle(W.title), title: W.title, reason: "r" }], [{ work: WA }]));
+    check("8d excluded rows (matched + pool hit) carry both keys",
+      ex.length === 2 && ex.every(r => r.abstract === "Some abstract" && r.abstract_truncated === true), ex);
+
+    const row = plain(studyRow(WA, "supporting"));
+    const bib = analysisBibTeX("consensus_verdict", [row], new Set());
+    check("8e analysisBibTeX has no abstract text", !/abstract/i.test(bib), bib);
+    const art = toBibTeX([row], new Set());
+    check("8e2 toBibTeX of a study row has no abstract text", !/abstract/i.test(art) && art.includes("@article{"), art);
+
+    // No commas in any other cell, so a plain split(",") finds the columns.
+    const csv = toCSV([plain(studyRow({ title: "T", abstract: "=1+1", abstract_truncated: false }, "supporting"))]);
+    const lines = csv.split("\r\n");
+    const head = lines[1].split(",");
+    const cells = lines[2].split(",");
+    const ai = head.indexOf("abstract");
+    check("8f abstract \"=1+1\" -> CSV guard prefix \"'=1+1\"", ai >= 0 && cells[ai] === "'=1+1", { head, cells });
+    const ti = head.indexOf("abstract_truncated");
+    check("8g abstract_truncated false -> CSV \"No\"", ti >= 0 && cells[ti] === "No", { head, cells });
   }
 } catch (e) {
   console.error("FAIL: test crashed: " + (e && e.stack || e));
