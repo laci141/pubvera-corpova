@@ -2,8 +2,9 @@ name: Build and Deploy Corpova
 
 # pull_request runs both jobs, but never publishes an image: in the build job
 # the GHCR login and the push are gated on the event not being a
-# pull_request. Watchtower on the server deploys whatever :latest points at,
-# so a PR that could push :latest would deploy unmerged code.
+# pull_request AND the ref being main. Watchtower on the server deploys
+# whatever :latest points at, so a PR, or a workflow_dispatch run on another
+# branch, that could push :latest would deploy unmerged code.
 on:
   push:
     branches: [main]
@@ -16,6 +17,13 @@ env:
   # Bump this deliberately and read the diff, rather than being bumped by it.
   # Same version as pubvera-recallis and pubvera-grantvera.
   GOVULNCHECK_VERSION: v1.8.0
+
+# One run per ref at a time, never cancelled: the version step counts the tags
+# already on origin, so two overlapping runs on main could otherwise both
+# compute the same N.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -134,13 +142,29 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-26.04
+    # contents: write is for the git tag and GitHub Release the last step makes.
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       # No LFS checkout here either: nothing in the build context needs it.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # CalVer YYYY.MM.DD.N: the UTC date plus 1 + the number of tags
+      # vYYYY.MM.DD.* already on origin. Every non-pull_request run on main is
+      # versioned (push and workflow_dispatch), so a manual run never publishes
+      # a "dev" image to :latest. Every other build uses "dev".
+      - name: Compute version
+        id: version
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          D=$(date -u +%Y.%m.%d)
+          N=$(git ls-remote --tags origin "refs/tags/v$D.*" | wc -l)
+          VERSION="$D.$((N + 1))"
+          echo "version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -163,6 +187,10 @@ jobs:
           load: true
           push: false
           tags: corpova-label-check:ci
+          # Same APP_VERSION as the push below, so that build reuses these
+          # layers from the gha cache and the checked image is the shipped one.
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.version || 'dev' }}
           cache-from: type=gha
 
       - name: Check the CLI commit label
@@ -182,10 +210,10 @@ jobs:
           fi
           echo "label matches the pinned commit"
 
-      # Skipped on pull_request: a PR build proves the image builds, but has no
-      # reason to hold registry credentials.
+      # Skipped on pull_request and off main: a PR build proves the image
+      # builds, but has no reason to hold registry credentials.
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -198,11 +226,30 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && steps.version.outputs.version && format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, steps.version.outputs.version) || '' }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.version || 'dev' }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # After the push, so a release never names an image that does not exist.
+      # The first release has no earlier tag to diff against, so it gets fixed
+      # notes instead of --generate-notes.
+      - name: Create GitHub release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$(gh release list --limit 1 --json tagName --jq length)" = "0" ]; then
+            gh release create "v$VERSION" --target "$GITHUB_SHA" --title "Corpova $VERSION" --notes "Baseline release: first versioned build. Earlier history is in the merged pull requests."
+          else
+            gh release create "v$VERSION" --target "$GITHUB_SHA" --title "Corpova $VERSION" --generate-notes
+          fi
