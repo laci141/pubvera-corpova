@@ -1398,6 +1398,7 @@
   <footer>
     <p>Corpova — Evidence Consensus Analysis · LLM-assisted synthesis over open scholarly metadata</p>
     <p><a href="https://github.com/laci141/pubvera-corpova">GitHub</a> | Powered by <a href="https://github.com/mvanhorn/printing-press-library">Printing Press Library</a></p>
+    <span id="app-version"></span>
   </footer>
 
   <!-- LEGAL DISCLAIMER -->
@@ -3577,6 +3578,21 @@
     }
 
     initAuth().catch(() => { /* stay in unauthenticated mode */ });
+  </script>
+
+  <!-- Build version from /version (handleVersion in main.go).
+       textContent only; on any failure the span stays empty. -->
+  <script>
+    (function () {
+      fetch('/version', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then((d) => {
+          if (d && typeof d.version === 'string' && d.version) {
+            document.getElementById('app-version').textContent = 'Corpova v' + d.version;
+          }
+        })
+        .catch(() => { /* leave the footer without a version */ });
+    })();
   </script>
 
 </body>

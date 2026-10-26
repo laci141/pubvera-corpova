@@ -31,7 +31,11 @@ FROM golang:1.27.3-alpine AS web-builder
 WORKDIR /build
 COPY go.mod ./
 COPY *.go ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/server .
+# The CalVer version from the release workflow; "dev" for any other build.
+# -X names the variable main.appVersion: for package main the linker uses
+# "main", not the module path pubvera-corpova.
+ARG APP_VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-X main.appVersion=${APP_VERSION}" -o /out/server .
 
 # ---- Stage 3: minimal runtime ------------------------------------------------
 # Pinned to the 3.24 branch instead of latest, like Recallis, Retractis,
@@ -51,6 +55,10 @@ RUN chmod +x ./bin/scientific-consensus-pp-cli
 # The upstream commit the CLI was built from, readable with docker inspect.
 ARG PP_LIBRARY_COMMIT
 LABEL org.pubvera.cli.commit=${PP_LIBRARY_COMMIT}
+
+# The CalVer version the server reports on /version.
+ARG APP_VERSION=dev
+LABEL org.opencontainers.image.version=${APP_VERSION}
 
 ENV CLI_BIN=/app/bin/scientific-consensus-pp-cli
 # The server binds $ADDR if set, else 0.0.0.0:$PORT, else 127.0.0.1:8090.
