@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Corpova — claim-level evidence analysis across the scientific literature: transparent AI filtering, dual scoring, keyless via OpenAlex.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233b82f6'/%3E%3Cg fill='%23ffffff' transform='translate(32 32) scale(0.82) translate(-32 -32)'%3E%3Crect x='6' y='11' width='42' height='8.1' rx='3.7'/%3E%3Crect x='11.3' y='24' width='31.3' height='8.1' rx='3.7'/%3E%3Crect x='16.7' y='37' width='20.7' height='8.1' rx='3.7'/%3E%3Crect x='22' y='50' width='10' height='8.1' rx='3.7'/%3E%3Crect x='51' y='25.3' width='7' height='5.5' rx='2.75' opacity='0.74'/%3E%3Crect x='51' y='38.3' width='7' height='5.5' rx='2.75' opacity='0.94'/%3E%3Crect x='51' y='51.3' width='7' height='5.5' rx='2.75'/%3E%3C/g%3E%3C/svg%3E">
-  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb" crossorigin="anonymous"></script>
+  <script nonce="__CSP_NONCE__" src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb" crossorigin="anonymous"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html { scroll-behavior: smooth; }
@@ -1410,7 +1410,7 @@
     against the original sources.
   </div>
 
-  <script>
+  <script nonce="__CSP_NONCE__">
     // localStorage integration
     const storageKeys = { key: 'sc_llm_key', keyRemember: 'sc_llm_key_remember', provider: 'sc_provider', model: 'sc_model', abstracts: 'sc_export_abstracts' };
     // "Include abstracts" export toggle, on by default. Only '0' turns it off,
@@ -3493,7 +3493,7 @@
        deployment until the environment variables are set — Supabase is never
        loaded at all and the page runs unauthenticated: no sign-in UI, no
        Authorization header, everything else unchanged. -->
-  <script type="module">
+  <script nonce="__CSP_NONCE__" type="module">
     const bar     = document.getElementById('authBar');
     const emailEl = document.getElementById('authEmail');
     const inBtn   = document.getElementById('authSignInBtn');
@@ -3582,7 +3582,7 @@
 
   <!-- Build version from /version (handleVersion in main.go).
        textContent only; on any failure the span stays empty. -->
-  <script>
+  <script nonce="__CSP_NONCE__">
     (function () {
       fetch('/version', { cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : Promise.reject()))

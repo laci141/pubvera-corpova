@@ -29,6 +29,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -303,6 +305,27 @@ type browserConfig struct {
 	SupabaseAnonKey string `json:"supabase_anon_key"`
 }
 
+// Content-Security-Policy, phase 1 (COR-007b): every <script> tag in index.html
+// carries nonce="__CSP_NONCE__", and each index response replaces that marker
+// with a fresh nonce named in the policy header. The header is Report-Only, so
+// nothing is blocked yet; phase 2 changes only cspHeaderName.
+const (
+	nonceMarker   = "__CSP_NONCE__"
+	cspHeaderName = "Content-Security-Policy-Report-Only"
+)
+
+// nonceRandRead is the random source for the CSP nonce. It is a variable only
+// so a test can make it fail.
+var nonceRandRead = rand.Read
+
+// contentSecurityPolicy is the policy for the index page. 'unsafe-inline' and
+// https: are the backward-compatibility fallback for browsers that predate
+// nonces and 'strict-dynamic'; browsers that understand nonce plus
+// 'strict-dynamic' (Chrome 52+, Firefox 52+, Safari 15.4+) ignore both.
+func contentSecurityPolicy(nonce string) string {
+	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+}
+
 func handleRoot(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/config.json":
@@ -332,9 +355,20 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		// Falls back to "ok" (a plain health check) when index.html isn't
 		// present next to the binary.
 		if data, err := os.ReadFile("index.html"); err == nil {
+			// Fail closed: without a fresh nonce there is no page and no policy.
+			var nb [16]byte
+			if _, err := nonceRandRead(nb[:]); err != nil {
+				log.Printf("csp nonce: %v", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			nonce := base64.RawStdEncoding.EncodeToString(nb[:])
+			data = bytes.ReplaceAll(data, []byte(nonceMarker), []byte(nonce))
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			// Revalidate on every load so a deploy is visible immediately.
-			w.Header().Set("Cache-Control", "no-cache")
+			// Never stored, so a deploy is visible on the next load and a cached
+			// copy cannot replay one nonce to every visitor.
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set(cspHeaderName, contentSecurityPolicy(nonce))
 			_, _ = w.Write(data)
 			return
 		}

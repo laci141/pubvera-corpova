@@ -7,9 +7,11 @@ import (
 	"testing"
 )
 
-// The index page must be revalidated on every load, so a deploy is visible
+// The index page must be fetched fresh on every load, so a deploy is visible
 // immediately instead of whenever a browser's heuristic cache expires. Without
-// a Cache-Control header neither Caddy nor Cloudflare adds one.
+// a Cache-Control header neither Caddy nor Cloudflare adds one. It is no-store,
+// not no-cache: the page carries a per-response CSP nonce, and a cached copy
+// would replay one nonce to every visitor.
 //
 // main() builds its mux inline and registers handleRoot as the "/" catch-all,
 // so handleRoot is the route table for every path tested here.
@@ -27,8 +29,8 @@ func TestIndexIsRevalidatedOnEveryLoad(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("GET %s: status = %d, want 200", path, rec.Code)
 		}
-		if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
-			t.Errorf("GET %s: Cache-Control = %q, want %q", path, cc, "no-cache")
+		if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+			t.Errorf("GET %s: Cache-Control = %q, want %q", path, cc, "no-store")
 		}
 		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 			t.Errorf("GET %s: Content-Type = %q, want text/html", path, ct)
@@ -53,7 +55,7 @@ func TestUnknownPathIs404(t *testing.T) {
 }
 
 // The health answer is not the page: neither /healthz nor the "/" fallthrough
-// (index.html unreadable) may pick up the index page's no-cache.
+// (index.html unreadable) may pick up the index page's no-store.
 func TestHealthzIsNotTheIndexPage(t *testing.T) {
 	check := func(t *testing.T, path string) {
 		t.Helper()
@@ -64,8 +66,8 @@ func TestHealthzIsNotTheIndexPage(t *testing.T) {
 		if got := rec.Body.String(); got != "ok" {
 			t.Errorf("GET %s: body = %q, want %q", path, got, "ok")
 		}
-		if cc := rec.Header().Get("Cache-Control"); cc == "no-cache" {
-			t.Errorf("GET %s: Cache-Control = %q, want anything but %q", path, cc, "no-cache")
+		if cc := rec.Header().Get("Cache-Control"); cc == "no-store" {
+			t.Errorf("GET %s: Cache-Control = %q, want anything but %q", path, cc, "no-store")
 		}
 	}
 	t.Run("healthz", func(t *testing.T) { check(t, "/healthz") })
