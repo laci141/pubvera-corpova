@@ -10,9 +10,8 @@ import (
 	"testing"
 )
 
-// COR-007b phase 1: the index page carries a fresh nonce in every <script>
-// tag and a matching Content-Security-Policy-Report-Only header. Nothing is
-// blocked yet; phase 2 changes only the header name. Like root_cache_test.go,
+// COR-007b: the index page carries a fresh nonce in every <script> tag and a
+// matching, enforced Content-Security-Policy header. Like root_cache_test.go,
 // these call handleRoot directly (see getRoot there).
 
 // wantPolicy is written out here rather than taken from contentSecurityPolicy,
@@ -32,17 +31,17 @@ var cspNonceRE = regexp.MustCompile(`^script-src 'nonce-([A-Za-z0-9+/]{22})' `)
 var scriptOpenRE = regexp.MustCompile(`<script\b[^>]*>`)
 
 // indexNonce fetches the index page and returns the response and the nonce
-// read from the Report-Only header.
+// read from the Content-Security-Policy header.
 func indexNonce(t *testing.T) (string, string, http.Header) {
 	t.Helper()
 	rec := getRoot(t, "/")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /: status = %d, want 200", rec.Code)
 	}
-	csp := rec.Header().Get("Content-Security-Policy-Report-Only")
+	csp := rec.Header().Get("Content-Security-Policy")
 	m := cspNonceRE.FindStringSubmatch(csp)
 	if m == nil {
-		t.Fatalf("GET /: Content-Security-Policy-Report-Only = %q, want it to start with a 22-character nonce", csp)
+		t.Fatalf("GET /: Content-Security-Policy = %q, want it to start with a 22-character nonce", csp)
 	}
 	return m[1], rec.Body.String(), rec.Header()
 }
@@ -82,19 +81,19 @@ func TestCSPNonceInHeaderMatchesEveryScriptTag(t *testing.T) {
 	}
 }
 
-func TestCSPHeaderIsReportOnlyWithThePolicy(t *testing.T) {
+func TestCSPHeaderIsEnforcedWithThePolicy(t *testing.T) {
 	nonce, _, h := indexNonce(t)
-	if got, want := h.Get("Content-Security-Policy-Report-Only"), wantPolicy(nonce); got != want {
-		t.Errorf("Content-Security-Policy-Report-Only = %q, want %q", got, want)
+	if got, want := h.Get("Content-Security-Policy"), wantPolicy(nonce); got != want {
+		t.Errorf("Content-Security-Policy = %q, want %q", got, want)
 	}
-	// Phase 1 blocks nothing: the enforcing header must not be sent yet.
-	if got := h.Get("Content-Security-Policy"); got != "" {
-		t.Errorf("Content-Security-Policy = %q, want it absent in phase 1", got)
+	// The policy is enforced: a leftover Report-Only copy must not be sent.
+	if got := h.Get("Content-Security-Policy-Report-Only"); got != "" {
+		t.Errorf("Content-Security-Policy-Report-Only = %q, want it absent", got)
 	}
 }
 
-// A <script> tag added later without the marker would be blocked once the
-// policy is enforced, so the real file is checked, not a fixture.
+// A <script> tag added later without the marker would be blocked by the
+// enforced policy, so the real file is checked, not a fixture.
 func TestEveryScriptTagInIndexHTMLCarriesTheMarker(t *testing.T) {
 	data, err := os.ReadFile("index.html")
 	if err != nil {
@@ -135,7 +134,7 @@ func TestNoCSPHeaderOutsideTheIndexPage(t *testing.T) {
 }
 
 // Without a nonce there is no page: serving one with a missing or fixed nonce
-// would break once enforced, or make the nonce guessable.
+// would break under the enforced policy, or make the nonce guessable.
 func TestCSPNonceFailureFailsClosed(t *testing.T) {
 	orig := nonceRandRead
 	t.Cleanup(func() { nonceRandRead = orig })
