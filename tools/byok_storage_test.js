@@ -13,7 +13,7 @@ const path = require("path");
 const vm = require("vm");
 
 const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
-const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+const scriptMatch = html.match(/<script(?: nonce="__CSP_NONCE__")?>([\s\S]*?)<\/script>/);
 if (!scriptMatch) {
   console.error("FAIL: no inline <script> found in index.html - refusing to pass silently");
   process.exit(1);
