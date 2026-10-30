@@ -208,7 +208,7 @@ try {
     check("g  metaRow output has no style= / on*= attribute at all", !/\sstyle\s*=|\son[a-z]+\s*=/i.test(on), on);
     const cls = (label.match(/<label class="([^"]+)"/) || [])[1];
     check("g  label class is defined in the <style> block",
-      !!cls && new RegExp("\\." + cls + "\\s*\\{").test((html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || ""), cls);
+      !!cls && new RegExp("\\." + cls + "\\s*\\{").test((html.match(/<style\b[^>]*>([\s\S]*?)<\/style>/) || [])[1] || ""), cls);
     const mapMatch = html.match(/const clickActions = \{([\s\S]*?)\n\s*\};/);
     check("g  clickActions has toggleAbstracts", !!mapMatch && /^\s*toggleAbstracts\s*:/m.test(mapMatch[1]));
   }
