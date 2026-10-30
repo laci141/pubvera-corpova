@@ -65,6 +65,10 @@ func TestCSPNonceIsFreshPerResponse(t *testing.T) {
 	}
 }
 
+func styleWantPolicy(nonce string) string {
+	return "style-src 'nonce-" + nonce + "'; style-src-attr 'none'"
+}
+
 func TestCSPNonceInHeaderMatchesEveryScriptTag(t *testing.T) {
 	nonce, body, _ := indexNonce(t)
 	if strings.Contains(body, nonceMarkerText) {
@@ -86,9 +90,9 @@ func TestCSPHeaderIsEnforcedWithThePolicy(t *testing.T) {
 	if got, want := h.Get("Content-Security-Policy"), wantPolicy(nonce); got != want {
 		t.Errorf("Content-Security-Policy = %q, want %q", got, want)
 	}
-	// The policy is enforced: a leftover Report-Only copy must not be sent.
-	if got := h.Get("Content-Security-Policy-Report-Only"); got != "" {
-		t.Errorf("Content-Security-Policy-Report-Only = %q, want it absent", got)
+	// S1: the style policy rides along as Report-Only, same nonce, blocks nothing.
+	if got, want := h.Get("Content-Security-Policy-Report-Only"), styleWantPolicy(nonce); got != want {
+		t.Errorf("Content-Security-Policy-Report-Only = %q, want %q", got, want)
 	}
 }
 
@@ -109,8 +113,12 @@ func TestEveryScriptTagInIndexHTMLCarriesTheMarker(t *testing.T) {
 			t.Errorf("index.html: %s has no nonce=%q", tag, nonceMarkerText)
 		}
 	}
-	if n := strings.Count(html, nonceMarkerText); n != len(tags) {
-		t.Errorf("index.html: %s appears %d times, want %d (one per <script> tag)", nonceMarkerText, n, len(tags))
+	styles := regexp.MustCompile(`<style\b[^>]*>`).FindAllString(html, -1)
+	if len(styles) != 1 || !strings.Contains(styles[0], ` nonce="`+nonceMarkerText+`"`) {
+		t.Errorf("index.html: want exactly one <style> tag carrying the marker, got %v", styles)
+	}
+	if n := strings.Count(html, nonceMarkerText); n != len(tags)+len(styles) {
+		t.Errorf("index.html: %s appears %d times, want %d (one per <script> and <style> tag)", nonceMarkerText, n, len(tags)+len(styles))
 	}
 }
 
