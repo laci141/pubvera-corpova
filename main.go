@@ -312,9 +312,6 @@ type browserConfig struct {
 const (
 	nonceMarker   = "__CSP_NONCE__"
 	cspHeaderName = "Content-Security-Policy"
-	// S1: the style policy is sent as Report-Only next to the enforced script
-	// policy. It blocks nothing; a violation shows up in the console.
-	styleHeaderName = "Content-Security-Policy-Report-Only"
 )
 
 // nonceRandRead is the random source for the CSP nonce. It is a variable only
@@ -326,12 +323,13 @@ var nonceRandRead = rand.Read
 // nonces and 'strict-dynamic'; browsers that understand nonce plus
 // 'strict-dynamic' (Chrome 52+, Firefox 52+, Safari 15.4+) ignore both.
 func contentSecurityPolicy(nonce string) string {
-	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; " + styleSecurityPolicy(nonce) + "; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 }
 
-// styleSecurityPolicy is the style policy for the index page (S1, Report-Only).
-// The one <style> block carries the same nonce; style="" attributes are
-// refused outright (style-src-attr 'none'), as the page has none (S0).
+// styleSecurityPolicy is the style part of the index page policy (S2, enforced).
+// The one <style> block carries the same nonce; style="" attributes are refused
+// outright (style-src-attr 'none'), as the page has none (S0). Script that sets
+// el.style.x is not an attribute and keeps working.
 func styleSecurityPolicy(nonce string) string {
 	return "style-src 'nonce-" + nonce + "'; style-src-attr 'none'"
 }
@@ -379,7 +377,6 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			// copy cannot replay one nonce to every visitor.
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set(cspHeaderName, contentSecurityPolicy(nonce))
-			w.Header().Set(styleHeaderName, styleSecurityPolicy(nonce))
 			_, _ = w.Write(data)
 			return
 		}
