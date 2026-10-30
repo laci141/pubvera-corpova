@@ -982,6 +982,43 @@
       .modal-content { max-width: 95%; padding: 1.5rem; }
       .bento-grid { grid-template-columns: 1fr; }
     }
+    /* ---- Classes that replace inline style attributes -----------------------
+       A Content-Security-Policy with style-src-attr 'none' blocks every inline
+       style attribute, also in HTML built by script. Repeated one-liners are u-*;
+       the modal and card accent colours are tone-* (--color); the AI stance
+       colour is stance-* (a closed set, picked in renderSynthesis); the rest
+       belong to one place and are named for it. Script that sets el.style.x
+       keeps working.
+       Each single-class rule repeats its class (specificity 0,2,0) so that it
+       wins over component rules such as .form-group input or .result-card p
+       (0,1,1), as the inline style did; measured 2026-10-30 with a computed-
+       style comparison of every element in Chromium. */
+    .u-mt-1.u-mt-1 { margin-top: 1rem; }
+    .u-mt-05.u-mt-05 { margin-top: 0.5rem; }
+    .u-my-05.u-my-05 { margin: 0.5rem 0; }
+    .u-w-auto.u-w-auto { width: auto; }
+    .u-w-full.u-w-full { width: 100%; }
+    .u-h-80.u-h-80 { height: 80px; }
+    .u-h-70.u-h-70 { height: 70px; }
+    .u-hidden.u-hidden { display: none; }
+    .u-op-85.u-op-85 { opacity: 0.85; }
+    .u-check-row.u-check-row { margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    .tone-cyan.tone-cyan { --color: #00d4ff; }
+    .tone-purple.tone-purple { --color: #7c3aed; }
+    .tone-pink.tone-pink { --color: #ec4899; }
+    .tone-amber.tone-amber { --color: #fbbf24; }
+    .tone-red.tone-red { --color: #ef4444; }
+    .stance-supports.stance-supports { --color: #22c55e; }
+    .stance-refutes.stance-refutes { --color: #ef4444; }
+    .stance-mixed.stance-mixed { --color: #fbbf24; }
+    .stance-insufficient.stance-insufficient { --color: #888; }
+    .stance-other.stance-other { --color: #00d4ff; }
+    .result-card.stance-card { border-left: 4px solid var(--color); }
+    .result-card.stance-card .synthesis-badge { color: var(--color); }
+    .synthesis-source.synthesis-source { font-weight: 400; color: #888; font-size: 0.8rem; }
+    .pyramid-table.pyramid-table { width: 100%; font-size: 0.9rem; }
+    .pyramid-example.pyramid-example { font-size: 0.85rem; opacity: 0.85; }
+    .pyramid-note.pyramid-note { margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.75; }
   </style>
 </head>
 <body>
@@ -1054,20 +1091,20 @@
   <!-- MODALS -->
   <!-- CONSENSUS MODAL -->
   <div class="modal" id="consensusModal">
-    <div class="modal-content" style="--color: #00d4ff;">
+    <div class="modal-content tone-cyan">
       <div class="modal-header">
         <h2>📊 Consensus Analysis</h2>
         <button class="close-btn" data-action="closeModal" data-endpoint="consensus">&times;</button>
       </div>
       <div id="consensusForm" class="form-group">
         <label>Claim</label>
-        <textarea id="consensusClaim" placeholder="Enter your claim..." style="height: 80px;"></textarea>
-        <label style="margin-top: 1rem;">LLM Key (optional)</label>
+        <textarea id="consensusClaim" placeholder="Enter your claim..." class="u-h-80"></textarea>
+        <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="consensusKey" placeholder="sk-ant-... for AI-assisted mode">
-        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="consensusKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <label class="u-check-row"><input type="checkbox" id="consensusKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
-        <button type="button" class="auth-btn" id="consensusKeyClear" style="margin-top: 0.5rem;">Clear key</button>
-        <label style="margin-top: 1rem;">Provider</label>
+        <button type="button" class="auth-btn u-mt-05" id="consensusKeyClear">Clear key</button>
+        <label class="u-mt-1">Provider</label>
         <select id="consensusProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1087,11 +1124,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label style="margin-top: 1rem;">Model (optional)</label>
+        <label class="u-mt-1">Model (optional)</label>
         <input type="text" id="consensusModel" placeholder="provider default" autocomplete="off" list="consensusModelOptions">
         <datalist id="consensusModelOptions"></datalist>
         <div class="model-hint" id="consensusModelHint"></div>
-        <label style="margin-top: 1rem;">Limit (studies)</label>
+        <label class="u-mt-1">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="consensusLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="consensusLimitMark"></span>
@@ -1114,28 +1151,28 @@
           <div class="limit-panel-body" id="consensusLimitBody"></div>
           <div class="limit-panel-warn" id="consensusLimitWarn"></div>
         </div>
-        <button class="btn" data-action="runAnalysis" data-endpoint="consensus" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn u-mt-1 u-w-full" data-action="runAnalysis" data-endpoint="consensus">Run Analysis</button>
       </div>
-      <div id="consensusResults" style="display: none;"></div>
+      <div id="consensusResults" class="u-hidden"></div>
     </div>
   </div>
 
   <!-- EVIDENCE MODAL -->
   <div class="modal" id="evidenceModal">
-    <div class="modal-content" style="--color: #7c3aed;">
+    <div class="modal-content tone-purple">
       <div class="modal-header">
         <h2>🔬 Evidence Pyramid</h2>
         <button class="close-btn" data-action="closeModal" data-endpoint="evidence">&times;</button>
       </div>
       <div id="evidenceForm" class="form-group">
         <label>Claim</label>
-        <textarea id="evidenceClaim" placeholder="Enter your claim..." style="height: 80px;"></textarea>
-        <label style="margin-top: 1rem;">LLM Key (optional)</label>
+        <textarea id="evidenceClaim" placeholder="Enter your claim..." class="u-h-80"></textarea>
+        <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="evidenceKey" placeholder="sk-ant-... for AI-assisted mode">
-        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="evidenceKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <label class="u-check-row"><input type="checkbox" id="evidenceKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
-        <button type="button" class="auth-btn" id="evidenceKeyClear" style="margin-top: 0.5rem;">Clear key</button>
-        <label style="margin-top: 1rem;">Provider</label>
+        <button type="button" class="auth-btn u-mt-05" id="evidenceKeyClear">Clear key</button>
+        <label class="u-mt-1">Provider</label>
         <select id="evidenceProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1155,11 +1192,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label style="margin-top: 1rem;">Model (optional)</label>
+        <label class="u-mt-1">Model (optional)</label>
         <input type="text" id="evidenceModel" placeholder="provider default" autocomplete="off" list="evidenceModelOptions">
         <datalist id="evidenceModelOptions"></datalist>
         <div class="model-hint" id="evidenceModelHint"></div>
-        <label style="margin-top: 1rem;">Limit (studies)</label>
+        <label class="u-mt-1">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="evidenceLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="evidenceLimitMark"></span>
@@ -1182,30 +1219,30 @@
           <div class="limit-panel-body" id="evidenceLimitBody"></div>
           <div class="limit-panel-warn" id="evidenceLimitWarn"></div>
         </div>
-        <button class="btn" data-action="runAnalysis" data-endpoint="evidence" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn u-mt-1 u-w-full" data-action="runAnalysis" data-endpoint="evidence">Run Analysis</button>
       </div>
-      <div id="evidenceResults" style="display: none;"></div>
+      <div id="evidenceResults" class="u-hidden"></div>
     </div>
   </div>
 
   <!-- COMPARE MODAL -->
   <div class="modal" id="compareModal">
-    <div class="modal-content" style="--color: #ec4899;">
+    <div class="modal-content tone-pink">
       <div class="modal-header">
         <h2>⚖️ Compare Claims</h2>
         <button class="close-btn" data-action="closeModal" data-endpoint="compare">&times;</button>
       </div>
       <div id="compareForm" class="form-group">
         <label>Claim 1</label>
-        <textarea id="compareClaim1" placeholder="Enter first claim..." style="height: 70px;"></textarea>
-        <label style="margin-top: 1rem;">Claim 2</label>
-        <textarea id="compareClaim2" placeholder="Enter second claim..." style="height: 70px;"></textarea>
-        <label style="margin-top: 1rem;">LLM Key (optional)</label>
+        <textarea id="compareClaim1" placeholder="Enter first claim..." class="u-h-70"></textarea>
+        <label class="u-mt-1">Claim 2</label>
+        <textarea id="compareClaim2" placeholder="Enter second claim..." class="u-h-70"></textarea>
+        <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="compareKey" placeholder="sk-ant-... for AI-assisted mode">
-        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="compareKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <label class="u-check-row"><input type="checkbox" id="compareKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
-        <button type="button" class="auth-btn" id="compareKeyClear" style="margin-top: 0.5rem;">Clear key</button>
-        <label style="margin-top: 1rem;">Provider</label>
+        <button type="button" class="auth-btn u-mt-05" id="compareKeyClear">Clear key</button>
+        <label class="u-mt-1">Provider</label>
         <select id="compareProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1225,11 +1262,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label style="margin-top: 1rem;">Model (optional)</label>
+        <label class="u-mt-1">Model (optional)</label>
         <input type="text" id="compareModel" placeholder="provider default" autocomplete="off" list="compareModelOptions">
         <datalist id="compareModelOptions"></datalist>
         <div class="model-hint" id="compareModelHint"></div>
-        <label style="margin-top: 1rem;">Limit (studies)</label>
+        <label class="u-mt-1">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="compareLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="compareLimitMark"></span>
@@ -1252,28 +1289,28 @@
           <div class="limit-panel-body" id="compareLimitBody"></div>
           <div class="limit-panel-warn" id="compareLimitWarn"></div>
         </div>
-        <button class="btn" data-action="runAnalysis" data-endpoint="compare" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn u-mt-1 u-w-full" data-action="runAnalysis" data-endpoint="compare">Run Analysis</button>
       </div>
-      <div id="compareResults" style="display: none;"></div>
+      <div id="compareResults" class="u-hidden"></div>
     </div>
   </div>
 
   <!-- GAPS MODAL -->
   <div class="modal" id="gapsModal">
-    <div class="modal-content" style="--color: #fbbf24;">
+    <div class="modal-content tone-amber">
       <div class="modal-header">
         <h2>🔍 Research Gaps</h2>
         <button class="close-btn" data-action="closeModal" data-endpoint="gaps">&times;</button>
       </div>
       <div id="gapsForm" class="form-group">
         <label>Claim</label>
-        <textarea id="gapsClaim" placeholder="Enter your claim..." style="height: 80px;"></textarea>
-        <label style="margin-top: 1rem;">LLM Key (optional)</label>
+        <textarea id="gapsClaim" placeholder="Enter your claim..." class="u-h-80"></textarea>
+        <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="gapsKey" placeholder="sk-ant-... for AI-assisted mode">
-        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="gapsKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <label class="u-check-row"><input type="checkbox" id="gapsKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
-        <button type="button" class="auth-btn" id="gapsKeyClear" style="margin-top: 0.5rem;">Clear key</button>
-        <label style="margin-top: 1rem;">Provider</label>
+        <button type="button" class="auth-btn u-mt-05" id="gapsKeyClear">Clear key</button>
+        <label class="u-mt-1">Provider</label>
         <select id="gapsProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1293,11 +1330,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label style="margin-top: 1rem;">Model (optional)</label>
+        <label class="u-mt-1">Model (optional)</label>
         <input type="text" id="gapsModel" placeholder="provider default" autocomplete="off" list="gapsModelOptions">
         <datalist id="gapsModelOptions"></datalist>
         <div class="model-hint" id="gapsModelHint"></div>
-        <label style="margin-top: 1rem;">Limit (studies)</label>
+        <label class="u-mt-1">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="gapsLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="gapsLimitMark"></span>
@@ -1320,28 +1357,28 @@
           <div class="limit-panel-body" id="gapsLimitBody"></div>
           <div class="limit-panel-warn" id="gapsLimitWarn"></div>
         </div>
-        <button class="btn" data-action="runAnalysis" data-endpoint="gaps" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn u-mt-1 u-w-full" data-action="runAnalysis" data-endpoint="gaps">Run Analysis</button>
       </div>
-      <div id="gapsResults" style="display: none;"></div>
+      <div id="gapsResults" class="u-hidden"></div>
     </div>
   </div>
 
   <!-- CONTROVERSIES MODAL -->
   <div class="modal" id="controversiesModal">
-    <div class="modal-content" style="--color: #ef4444;">
+    <div class="modal-content tone-red">
       <div class="modal-header">
         <h2>⚡ Controversies</h2>
         <button class="close-btn" data-action="closeModal" data-endpoint="controversies">&times;</button>
       </div>
       <div id="controversiesForm" class="form-group">
         <label>Claim</label>
-        <textarea id="controversiesClaim" placeholder="Enter your claim..." style="height: 80px;"></textarea>
-        <label style="margin-top: 1rem;">LLM Key (optional)</label>
+        <textarea id="controversiesClaim" placeholder="Enter your claim..." class="u-h-80"></textarea>
+        <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="controversiesKey" placeholder="sk-ant-... for AI-assisted mode">
-        <label style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="controversiesKeyRemember" style="width: auto;"> Remember this key on this browser</label>
+        <label class="u-check-row"><input type="checkbox" id="controversiesKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
-        <button type="button" class="auth-btn" id="controversiesKeyClear" style="margin-top: 0.5rem;">Clear key</button>
-        <label style="margin-top: 1rem;">Provider</label>
+        <button type="button" class="auth-btn u-mt-05" id="controversiesKeyClear">Clear key</button>
+        <label class="u-mt-1">Provider</label>
         <select id="controversiesProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1361,11 +1398,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label style="margin-top: 1rem;">Model (optional)</label>
+        <label class="u-mt-1">Model (optional)</label>
         <input type="text" id="controversiesModel" placeholder="provider default" autocomplete="off" list="controversiesModelOptions">
         <datalist id="controversiesModelOptions"></datalist>
         <div class="model-hint" id="controversiesModelHint"></div>
-        <label style="margin-top: 1rem;">Limit (studies)</label>
+        <label class="u-mt-1">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="controversiesLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="controversiesLimitMark"></span>
@@ -1388,9 +1425,9 @@
           <div class="limit-panel-body" id="controversiesLimitBody"></div>
           <div class="limit-panel-warn" id="controversiesLimitWarn"></div>
         </div>
-        <button class="btn" data-action="runAnalysis" data-endpoint="controversies" style="margin-top: 1rem; width: 100%;">Run Analysis</button>
+        <button class="btn u-mt-1 u-w-full" data-action="runAnalysis" data-endpoint="controversies">Run Analysis</button>
       </div>
-      <div id="controversiesResults" style="display: none;"></div>
+      <div id="controversiesResults" class="u-hidden"></div>
     </div>
   </div>
 
@@ -2544,7 +2581,7 @@
         // The raw error ("missing/invalid token") tells the user nothing they
         // can act on, and the remedy is always the same, so it is not shown.
         const btn = (window.pubveraAuth && window.pubveraAuth.enabled)
-          ? '<button class="btn" style="margin-top: 1rem;" data-action="pubveraSignIn">Sign in with Google</button>'
+          ? '<button class="btn u-mt-1" data-action="pubveraSignIn">Sign in with Google</button>'
           : '';
         return `<div class="result-card"><h3>Sign-in required</h3><p>Please sign in to run an analysis.</p>${btn}</div>`;
       }
@@ -2669,8 +2706,9 @@
       }
       const s = data.llm_synthesis;
       if (!s) return html;
-      const stanceColors = { supports: '#22c55e', refutes: '#ef4444', mixed: '#fbbf24', insufficient: '#888' };
-      const color = stanceColors[s.stance] || '#00d4ff';
+      // The stance picks a CSS class (.stance-*), not an inline colour: an unknown
+      // stance falls back to 'other' (the default cyan).
+      const stanceKey = ['supports', 'refutes', 'mixed', 'insufficient'].includes(s.stance) ? s.stance : 'other';
       let points = '';
       if (Array.isArray(s.key_evidence) && s.key_evidence.length) {
         const texts = s.key_evidence.map(evidenceText).filter(Boolean);
@@ -2701,11 +2739,11 @@
           </div>`;
       }
       html += `
-        <div class="result-card" style="--color: ${color}; border-left: 4px solid ${color};">
+        <div class="result-card stance-card stance-${stanceKey}">
           ${serverKeyNote(data)}
-          <h3>🤖 LLM Synthesis <span style="font-weight:400;color:#888;font-size:0.8rem;">${esc(data.stance_source)} · ${esc(s.model)}</span></h3>
-          <p style="margin: 0.5rem 0;">
-            <span class="synthesis-badge" style="color:${color};">${esc(s.stance)}</span>
+          <h3>🤖 LLM Synthesis <span class="synthesis-source">${esc(data.stance_source)} · ${esc(s.model)}</span></h3>
+          <p class="u-my-05">
+            <span class="synthesis-badge">${esc(s.stance)}</span>
             <strong>Confidence:</strong> ${fx(s.confidence)}
           </p>
           <p>${esc(s.reasoning)}</p>
@@ -3024,7 +3062,7 @@
           response: data
         };
         return `
-          <div class="result-card" style="--color: #00d4ff;">
+          <div class="result-card tone-cyan">
             ${heuristicWarningBand(stanceSource)}
             ${divergenceBand(data)}
             ${nearUnanimousNote(result)}
@@ -3072,16 +3110,16 @@
                        example: p.example || '', example_doi: p.example_doi || '',
                        example_year: p.example_year || '' }));
         lastData.evidence_pyramid = { rows: pyramidRows, response: data };
-        let html = `<div class="result-card" style="--color: #7c3aed;"><h3>Evidence Pyramid</h3>`;
+        let html = `<div class="result-card tone-purple"><h3>Evidence Pyramid</h3>`;
         html += metaRow(plural(pyramidRows.length, 'evidence level'), 'evidence_pyramid', 'corpova-evidence-pyramid.json');
         if (hasWorks && Array.isArray(result.pyramid)) {
-          html += '<table style="width:100%;font-size:0.9rem;"><tr><th>Design</th><th>Count</th><th>%</th><th>Example study</th></tr>';
+          html += '<table class="pyramid-table"><tr><th>Design</th><th>Count</th><th>%</th><th>Example study</th></tr>';
           result.pyramid.forEach(p => {
-            html += `<tr><td>${esc(p.design)}</td><td>${num(p.count)}</td><td>${Number(p.pct)||0}%</td><td style="font-size:0.85rem;opacity:0.85;">${esc(p.example || '')}</td></tr>`;
+            html += `<tr><td>${esc(p.design)}</td><td>${num(p.count)}</td><td>${Number(p.pct)||0}%</td><td class="pyramid-example">${esc(p.example || '')}</td></tr>`;
           });
           html += '</table>';
         } else {
-          html += `<p style="margin-top:1rem;opacity:0.85;">${esc(result.note || 'The search returned no works, so no evidence levels were counted.')}</p>`;
+          html += `<p class="u-mt-1 u-op-85">${esc(result.note || 'The search returned no works, so no evidence levels were counted.')}</p>`;
         }
         // classified_by_pubtype is how many works carried a publication type
         // from OpenAlex; the rest were placed by title heuristics or left
@@ -3097,9 +3135,9 @@
           const pctTyped = Math.round(100 * typed / total);
           typedNote = ` &nbsp;·&nbsp; <strong>Typed by publisher:</strong> ${num(typed)} of ${num(total)} (${pctTyped}%)`;
         }
-        html += `<p style="margin-top:1rem;"><strong>Apex Design:</strong> ${esc(result.apex_design)} &nbsp;·&nbsp; <strong>Studies:</strong> ${num(result.study_count)}${typedNote}</p>`;
+        html += `<p class="u-mt-1"><strong>Apex Design:</strong> ${esc(result.apex_design)} &nbsp;·&nbsp; <strong>Studies:</strong> ${num(result.study_count)}${typedNote}</p>`;
         if (typedNote) {
-          html += `<p style="margin-top:0.5rem;font-size:0.85rem;opacity:0.75;">Works without a publisher-supplied type are placed by title heuristics or counted as unclassified. Raising the study limit adds mostly untyped works, so the percentages above move with the limit as well as with the evidence.</p>`;
+          html += `<p class="pyramid-note">Works without a publisher-supplied type are placed by title heuristics or counted as unclassified. Raising the study limit adds mostly untyped works, so the percentages above move with the limit as well as with the evidence.</p>`;
         }
         html += `</div>`;
         return html;
@@ -3117,7 +3155,7 @@
           const rows = keptRows(x.top_supporting, x.top_refuting, sink, `${fallbackLabel}: ${x.claim || ''}`);
           studyRowsAll.push(...rows);
           return `
-          <div class="result-card" style="--color: #ec4899;">
+          <div class="result-card tone-pink">
             <h3>${esc(x.claim)}</h3>
             <div class="verdict-box">${esc(x.verdict)}</div>
             <p><strong>Score:</strong> ${fx(x.consensus_score)} |
@@ -3163,7 +3201,7 @@
 
       // gaps: CLI returns { query, analyzed, latest_year, has_rct_or_stronger, findings:[{kind,detail}] }
       if (endpoint === 'gaps') {
-        let html = `<div class="result-card" style="--color: #fbbf24;"><h3>Research Gaps</h3>`;
+        let html = `<div class="result-card tone-amber"><h3>Research Gaps</h3>`;
         html += `<p><strong>Query:</strong> ${esc(result.query)} &nbsp;·&nbsp; <strong>Analyzed:</strong> ${num(result.analyzed)}`;
         if (result.latest_year != null) html += ` &nbsp;·&nbsp; <strong>Latest year:</strong> ${esc(result.latest_year)}`;
         if (result.has_rct_or_stronger != null) html += ` &nbsp;·&nbsp; <strong>RCT+ evidence:</strong> ${result.has_rct_or_stronger ? 'yes' : 'no'}`;
@@ -3204,7 +3242,7 @@
           }],
           response: data
         };
-        let html = `<div class="result-card" style="--color: #ef4444;"><h3>Controversies</h3>`;
+        let html = `<div class="result-card tone-red"><h3>Controversies</h3>`;
         html += `<p><strong>Controversy score:</strong> ${esc(result.controversy_score)} &nbsp;·&nbsp; <strong>Contested:</strong> ${result.contested ? 'yes' : 'no'} &nbsp;·&nbsp; <strong>Studies:</strong> ${num(result.study_count)}</p>`;
         html += `<p><strong>Supporting / Refuting / Mixed / Inconclusive:</strong> ${num(result.supporting)} / ${num(result.refuting)} / ${num(result.mixed)} / ${num(result.inconclusive)}</p>`;
         html += heuristicScoreNote();
