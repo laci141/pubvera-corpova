@@ -17,7 +17,7 @@ import (
 // wantPolicy is written out here rather than taken from contentSecurityPolicy,
 // so a change to any directive in main.go fails a test.
 func wantPolicy(nonce string) string {
-	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+	return "script-src 'nonce-" + nonce + "' 'strict-dynamic' https: 'unsafe-inline'; script-src-attr 'none'; style-src 'nonce-" + nonce + "'; style-src-attr 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 }
 
 // nonceMarkerText is the literal the server replaces. It is spelled out here
@@ -65,10 +65,6 @@ func TestCSPNonceIsFreshPerResponse(t *testing.T) {
 	}
 }
 
-func styleWantPolicy(nonce string) string {
-	return "style-src 'nonce-" + nonce + "'; style-src-attr 'none'"
-}
-
 func TestCSPNonceInHeaderMatchesEveryScriptTag(t *testing.T) {
 	nonce, body, _ := indexNonce(t)
 	if strings.Contains(body, nonceMarkerText) {
@@ -90,9 +86,9 @@ func TestCSPHeaderIsEnforcedWithThePolicy(t *testing.T) {
 	if got, want := h.Get("Content-Security-Policy"), wantPolicy(nonce); got != want {
 		t.Errorf("Content-Security-Policy = %q, want %q", got, want)
 	}
-	// S1: the style policy rides along as Report-Only, same nonce, blocks nothing.
-	if got, want := h.Get("Content-Security-Policy-Report-Only"), styleWantPolicy(nonce); got != want {
-		t.Errorf("Content-Security-Policy-Report-Only = %q, want %q", got, want)
+	// S2: one enforced header; the style directives are in it, and no Report-Only copy is sent.
+	if got := h.Get("Content-Security-Policy-Report-Only"); got != "" {
+		t.Errorf("Content-Security-Policy-Report-Only = %q, want it absent", got)
 	}
 }
 
