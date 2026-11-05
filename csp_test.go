@@ -86,9 +86,107 @@ func TestCSPHeaderIsEnforcedWithThePolicy(t *testing.T) {
 	if got, want := h.Get("Content-Security-Policy"), wantPolicy(nonce); got != want {
 		t.Errorf("Content-Security-Policy = %q, want %q", got, want)
 	}
-	// S2: one enforced header; the style directives are in it, and no Report-Only copy is sent.
-	if got := h.Get("Content-Security-Policy-Report-Only"); got != "" {
-		t.Errorf("Content-Security-Policy-Report-Only = %q, want it absent", got)
+	// S2: one enforced header carries the style directives. The only
+	// Report-Only header is the connect-src one, checked below.
+	if got := h.Values("Content-Security-Policy"); len(got) != 1 {
+		t.Errorf("Content-Security-Policy sent %d times, want once: %q", len(got), got)
+	}
+}
+
+const (
+	reportOnlyHeaderName     = "Content-Security-Policy-Report-Only"
+	reportingEndpointsHeader = "Reporting-Endpoints"
+	wantReportingEndpoints   = `csp="/csp-report"`
+	wantReportOnlySelf       = "connect-src 'self'; report-to csp; report-uri /csp-report"
+	wantReportOnlySupa       = "connect-src 'self' https://abc.supabase.co; report-to csp; report-uri /csp-report"
+	emptyConfigJSON          = `{"supabase_url":"","supabase_anon_key":""}` + "\n"
+)
+
+// checkReportOnly asserts the connect-src Report-Only header (exactly one,
+// exactly want, no script-src, style-src or nonce), Reporting-Endpoints and
+// the unchanged enforcing policy on one index response.
+func checkReportOnly(t *testing.T, path string, h http.Header, want string) {
+	t.Helper()
+	ro := h.Values(reportOnlyHeaderName)
+	if len(ro) != 1 || ro[0] != want {
+		t.Errorf("GET %s: %s = %q, want [%q]", path, reportOnlyHeaderName, ro, want)
+	}
+	for _, v := range ro {
+		for _, bad := range []string{"script-src", "style-src", "nonce"} {
+			if strings.Contains(v, bad) {
+				t.Errorf("GET %s: %s = %q, must not contain %s", path, reportOnlyHeaderName, v, bad)
+			}
+		}
+	}
+	if got := h.Get(reportingEndpointsHeader); got != wantReportingEndpoints {
+		t.Errorf("GET %s: %s = %q, want %q", path, reportingEndpointsHeader, got, wantReportingEndpoints)
+	}
+	csp := h.Get("Content-Security-Policy")
+	if m := cspNonceRE.FindStringSubmatch(csp); m == nil || csp != wantPolicy(m[1]) {
+		t.Errorf("GET %s: Content-Security-Policy = %q, want the unchanged enforcing policy", path, csp)
+	}
+}
+
+// The connect-src Report-Only header is sent on both index paths. It does not
+// use indexNonce, so a missing enforcing header does not hide this check.
+func TestCSPIndexReportOnlyIsConnectSrcOnly(t *testing.T) {
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("SUPABASE_PUBLISHABLE_KEY", "")
+	for _, path := range []string{"/", "/index.html"} {
+		rec := getRoot(t, path)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: status = %d, want 200", path, rec.Code)
+		}
+		checkReportOnly(t, path, rec.Header(), wantReportOnlySelf)
+	}
+}
+
+// supabaseConfig feeds both /config.json and the Report-Only header, so each
+// case pins the helper, the exact Report-Only value, the unchanged enforcing
+// policy and the /config.json body byte for byte. The /config.json bodies are
+// what the code before supabaseConfig returned (they pass on that code).
+func TestCSPReportOnlyConnectSrcTable(t *testing.T) {
+	const key = "sb_publishable_k"
+	cfg := func(u string) string {
+		return `{"supabase_url":"` + u + `","supabase_anon_key":"` + key + `"}` + "\n"
+	}
+	for _, tc := range []struct {
+		name, url, key           string
+		wantURL, wantKey, origin string
+		wantRO, wantCfg          string
+	}{
+		{"both unset", "", "", "", "", "", wantReportOnlySelf, emptyConfigJSON},
+		{"both set with a path", "https://abc.supabase.co/rest/v1?x=1#f", key,
+			"https://abc.supabase.co/rest/v1?x=1#f", key, "https://abc.supabase.co", wantReportOnlySupa, cfg("https://abc.supabase.co/rest/v1?x=1#f")},
+		{"both set, padded with spaces", "  https://abc.supabase.co  ", " " + key + " ",
+			"https://abc.supabase.co", key, "https://abc.supabase.co", wantReportOnlySupa, cfg("https://abc.supabase.co")},
+		{"only URL set", "https://abc.supabase.co", "", "", "", "", wantReportOnlySelf, emptyConfigJSON},
+		{"only key set", "", key, "", "", "", wantReportOnlySelf, emptyConfigJSON},
+		{"http URL", "http://abc.supabase.co", key, "http://abc.supabase.co", key, "", wantReportOnlySelf, cfg("http://abc.supabase.co")},
+		{"garbage URL", "not a url", key, "not a url", key, "", wantReportOnlySelf, cfg("not a url")},
+		{"unparseable URL", "https://%zz", key, "https://%zz", key, "", wantReportOnlySelf, cfg("https://%zz")},
+		{"space in the host", "https://abc .supabase.co", key, "https://abc .supabase.co", key, "", wantReportOnlySelf, cfg("https://abc .supabase.co")},
+		{"port", "https://abc.supabase.co:8443/x", key, "https://abc.supabase.co:8443/x", key, "https://abc.supabase.co:8443",
+			"connect-src 'self' https://abc.supabase.co:8443; report-to csp; report-uri /csp-report", cfg("https://abc.supabase.co:8443/x")},
+		{"userinfo", "https://u:p@abc.supabase.co/", key, "https://u:p@abc.supabase.co/", key, "https://abc.supabase.co", wantReportOnlySupa, cfg("https://u:p@abc.supabase.co/")},
+		{"';' injection", "https://abc.supabase.co;script-src", key, "https://abc.supabase.co;script-src", key, "", wantReportOnlySelf, cfg("https://abc.supabase.co;script-src")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SUPABASE_URL", tc.url)
+			t.Setenv("SUPABASE_PUBLISHABLE_KEY", tc.key)
+			gotURL, gotKey, gotOrigin := supabaseConfig()
+			if gotURL != tc.wantURL || gotKey != tc.wantKey || gotOrigin != tc.origin {
+				t.Errorf("supabaseConfig() = (%q, %q, %q), want (%q, %q, %q)", gotURL, gotKey, gotOrigin, tc.wantURL, tc.wantKey, tc.origin)
+			}
+			rec := getRoot(t, "/")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET /: status = %d, want 200", rec.Code)
+			}
+			checkReportOnly(t, "/", rec.Header(), tc.wantRO)
+			if got := getRoot(t, "/config.json").Body.String(); got != tc.wantCfg {
+				t.Errorf("GET /config.json body = %q, want %q", got, tc.wantCfg)
+			}
+		})
 	}
 }
 
@@ -122,7 +220,7 @@ func TestNoCSPHeaderOutsideTheIndexPage(t *testing.T) {
 	check := func(t *testing.T, path string) {
 		t.Helper()
 		rec := getRoot(t, path)
-		for _, name := range []string{"Content-Security-Policy-Report-Only", "Content-Security-Policy"} {
+		for _, name := range []string{"Content-Security-Policy-Report-Only", "Content-Security-Policy", "Reporting-Endpoints"} {
 			if got := rec.Header().Get(name); got != "" {
 				t.Errorf("GET %s: %s = %q, want it absent", path, name, got)
 			}
@@ -148,7 +246,7 @@ func TestCSPNonceFailureFailsClosed(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("GET /: status = %d, want 500", rec.Code)
 	}
-	for _, name := range []string{"Content-Security-Policy-Report-Only", "Content-Security-Policy"} {
+	for _, name := range []string{"Content-Security-Policy-Report-Only", "Content-Security-Policy", "Reporting-Endpoints"} {
 		if got := rec.Header().Get(name); got != "" {
 			t.Errorf("GET /: %s = %q, want it absent", name, got)
 		}
