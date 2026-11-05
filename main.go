@@ -345,12 +345,10 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		// A missing variable is not an error. An empty pair with status 200 is
 		// a valid answer that puts the page into unauthenticated mode, which is
 		// what keeps local development and the current deployment working until
-		// the environment is set.
-		supaURL := strings.TrimSpace(os.Getenv("SUPABASE_URL"))
-		supaKey := strings.TrimSpace(os.Getenv("SUPABASE_PUBLISHABLE_KEY"))
-		if supaURL == "" || supaKey == "" {
-			supaURL, supaKey = "", ""
-		}
+		// the environment is set. supabaseConfig (csp_report.go) is also what
+		// the index response uses for connect-src, so the page and the header
+		// agree.
+		supaURL, supaKey, _ := supabaseConfig()
 		setCORS(w)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		// Never cache: a stale key surviving a key rotation would be hard to
@@ -377,6 +375,12 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			// copy cannot replay one nonce to every visitor.
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set(cspHeaderName, contentSecurityPolicy(nonce))
+			// connect-src, report-only for now, on this response only. No
+			// script-src, style-src or nonce: those stay in the enforcing
+			// header above.
+			_, _, supaOrigin := supabaseConfig()
+			w.Header().Set(reportingEndpointsName, reportingEndpointsValue)
+			w.Header().Set(cspReportOnlyHeaderName, cspReportOnly(supaOrigin))
 			_, _ = w.Write(data)
 			return
 		}
@@ -390,6 +394,11 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		// the footer reads this before sign-in, and it carries nothing but the
 		// build version.
 		handleVersion(w, r)
+	case "/csp-report":
+		// The collector for the connect-src Report-Only policy
+		// (csp_report.go). Not under /api/, like /version: the browser sends
+		// reports without the page's bearer token.
+		handleCSPReport(w, r)
 	default:
 		http.NotFound(w, r)
 	}
