@@ -82,14 +82,19 @@ func TestCSPNonceInHeaderMatchesEveryScriptTag(t *testing.T) {
 }
 
 func TestCSPHeaderIsEnforcedWithThePolicy(t *testing.T) {
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("SUPABASE_PUBLISHABLE_KEY", "")
 	nonce, _, h := indexNonce(t)
-	if got, want := h.Get("Content-Security-Policy"), wantPolicy(nonce); got != want {
+	if got, want := h.Get("Content-Security-Policy"), wantPolicy(nonce)+wantConnectSrcSelf; got != want {
 		t.Errorf("Content-Security-Policy = %q, want %q", got, want)
 	}
-	// S2: one enforced header carries the style directives. The only
-	// Report-Only header is the connect-src one, checked below.
+	// S2 and connect-src B: one enforced header carries the script, style and
+	// connect-src directives; there is no Report-Only header at all.
 	if got := h.Values("Content-Security-Policy"); len(got) != 1 {
 		t.Errorf("Content-Security-Policy sent %d times, want once: %q", len(got), got)
+	}
+	if got := h.Values(reportOnlyHeaderName); len(got) != 0 {
+		t.Errorf("%s = %q, want it absent", reportOnlyHeaderName, got)
 	}
 }
 
@@ -97,39 +102,33 @@ const (
 	reportOnlyHeaderName     = "Content-Security-Policy-Report-Only"
 	reportingEndpointsHeader = "Reporting-Endpoints"
 	wantReportingEndpoints   = `csp="/csp-report"`
-	wantReportOnlySelf       = "connect-src 'self'; report-to csp; report-uri /csp-report"
-	wantReportOnlySupa       = "connect-src 'self' https://abc.supabase.co; report-to csp; report-uri /csp-report"
+	wantConnectSrcSelf       = "; connect-src 'self'; report-to csp; report-uri /csp-report"
+	wantConnectSrcSupa       = "; connect-src 'self' https://abc.supabase.co; report-to csp; report-uri /csp-report"
 	emptyConfigJSON          = `{"supabase_url":"","supabase_anon_key":""}` + "\n"
 )
 
-// checkReportOnly asserts the connect-src Report-Only header (exactly one,
-// exactly want, no script-src, style-src or nonce), Reporting-Endpoints and
-// the unchanged enforcing policy on one index response.
-func checkReportOnly(t *testing.T, path string, h http.Header, want string) {
+// checkEnforcingConnectSrc asserts the one enforcing Content-Security-Policy
+// header (exactly one, exactly wantPolicy(nonce)+tail), no Report-Only header
+// and Reporting-Endpoints on one index response.
+func checkEnforcingConnectSrc(t *testing.T, path string, h http.Header, tail string) {
 	t.Helper()
-	ro := h.Values(reportOnlyHeaderName)
-	if len(ro) != 1 || ro[0] != want {
-		t.Errorf("GET %s: %s = %q, want [%q]", path, reportOnlyHeaderName, ro, want)
+	csp := h.Values("Content-Security-Policy")
+	if len(csp) != 1 {
+		t.Errorf("GET %s: Content-Security-Policy = %q, want exactly one header", path, csp)
+	} else if m := cspNonceRE.FindStringSubmatch(csp[0]); m == nil || csp[0] != wantPolicy(m[1])+tail {
+		t.Errorf("GET %s: Content-Security-Policy = %q, want the enforcing policy ending %q", path, csp[0], tail)
 	}
-	for _, v := range ro {
-		for _, bad := range []string{"script-src", "style-src", "nonce"} {
-			if strings.Contains(v, bad) {
-				t.Errorf("GET %s: %s = %q, must not contain %s", path, reportOnlyHeaderName, v, bad)
-			}
-		}
+	if ro := h.Values(reportOnlyHeaderName); len(ro) != 0 {
+		t.Errorf("GET %s: %s = %q, want it absent", path, reportOnlyHeaderName, ro)
 	}
 	if got := h.Get(reportingEndpointsHeader); got != wantReportingEndpoints {
 		t.Errorf("GET %s: %s = %q, want %q", path, reportingEndpointsHeader, got, wantReportingEndpoints)
 	}
-	csp := h.Get("Content-Security-Policy")
-	if m := cspNonceRE.FindStringSubmatch(csp); m == nil || csp != wantPolicy(m[1]) {
-		t.Errorf("GET %s: Content-Security-Policy = %q, want the unchanged enforcing policy", path, csp)
-	}
 }
 
-// The connect-src Report-Only header is sent on both index paths. It does not
-// use indexNonce, so a missing enforcing header does not hide this check.
-func TestCSPIndexReportOnlyIsConnectSrcOnly(t *testing.T) {
+// connect-src is enforced on both index paths. It does not use indexNonce, so
+// a missing enforcing header does not hide this check.
+func TestCSPIndexEnforcesConnectSrc(t *testing.T) {
 	t.Setenv("SUPABASE_URL", "")
 	t.Setenv("SUPABASE_PUBLISHABLE_KEY", "")
 	for _, path := range []string{"/", "/index.html"} {
@@ -137,15 +136,15 @@ func TestCSPIndexReportOnlyIsConnectSrcOnly(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("GET %s: status = %d, want 200", path, rec.Code)
 		}
-		checkReportOnly(t, path, rec.Header(), wantReportOnlySelf)
+		checkEnforcingConnectSrc(t, path, rec.Header(), wantConnectSrcSelf)
 	}
 }
 
-// supabaseConfig feeds both /config.json and the Report-Only header, so each
-// case pins the helper, the exact Report-Only value, the unchanged enforcing
-// policy and the /config.json body byte for byte. The /config.json bodies are
+// supabaseConfig feeds both /config.json and the enforcing connect-src, so each
+// case pins the helper, the exact enforcing header and the /config.json body
+// byte for byte. The /config.json bodies are
 // what the code before supabaseConfig returned (they pass on that code).
-func TestCSPReportOnlyConnectSrcTable(t *testing.T) {
+func TestCSPEnforcingConnectSrcTable(t *testing.T) {
 	const key = "sb_publishable_k"
 	cfg := func(u string) string {
 		return `{"supabase_url":"` + u + `","supabase_anon_key":"` + key + `"}` + "\n"
@@ -153,23 +152,23 @@ func TestCSPReportOnlyConnectSrcTable(t *testing.T) {
 	for _, tc := range []struct {
 		name, url, key           string
 		wantURL, wantKey, origin string
-		wantRO, wantCfg          string
+		wantTail, wantCfg        string
 	}{
-		{"both unset", "", "", "", "", "", wantReportOnlySelf, emptyConfigJSON},
+		{"both unset", "", "", "", "", "", wantConnectSrcSelf, emptyConfigJSON},
 		{"both set with a path", "https://abc.supabase.co/rest/v1?x=1#f", key,
-			"https://abc.supabase.co/rest/v1?x=1#f", key, "https://abc.supabase.co", wantReportOnlySupa, cfg("https://abc.supabase.co/rest/v1?x=1#f")},
+			"https://abc.supabase.co/rest/v1?x=1#f", key, "https://abc.supabase.co", wantConnectSrcSupa, cfg("https://abc.supabase.co/rest/v1?x=1#f")},
 		{"both set, padded with spaces", "  https://abc.supabase.co  ", " " + key + " ",
-			"https://abc.supabase.co", key, "https://abc.supabase.co", wantReportOnlySupa, cfg("https://abc.supabase.co")},
-		{"only URL set", "https://abc.supabase.co", "", "", "", "", wantReportOnlySelf, emptyConfigJSON},
-		{"only key set", "", key, "", "", "", wantReportOnlySelf, emptyConfigJSON},
-		{"http URL", "http://abc.supabase.co", key, "http://abc.supabase.co", key, "", wantReportOnlySelf, cfg("http://abc.supabase.co")},
-		{"garbage URL", "not a url", key, "not a url", key, "", wantReportOnlySelf, cfg("not a url")},
-		{"unparseable URL", "https://%zz", key, "https://%zz", key, "", wantReportOnlySelf, cfg("https://%zz")},
-		{"space in the host", "https://abc .supabase.co", key, "https://abc .supabase.co", key, "", wantReportOnlySelf, cfg("https://abc .supabase.co")},
+			"https://abc.supabase.co", key, "https://abc.supabase.co", wantConnectSrcSupa, cfg("https://abc.supabase.co")},
+		{"only URL set", "https://abc.supabase.co", "", "", "", "", wantConnectSrcSelf, emptyConfigJSON},
+		{"only key set", "", key, "", "", "", wantConnectSrcSelf, emptyConfigJSON},
+		{"http URL", "http://abc.supabase.co", key, "http://abc.supabase.co", key, "", wantConnectSrcSelf, cfg("http://abc.supabase.co")},
+		{"garbage URL", "not a url", key, "not a url", key, "", wantConnectSrcSelf, cfg("not a url")},
+		{"unparseable URL", "https://%zz", key, "https://%zz", key, "", wantConnectSrcSelf, cfg("https://%zz")},
+		{"space in the host", "https://abc .supabase.co", key, "https://abc .supabase.co", key, "", wantConnectSrcSelf, cfg("https://abc .supabase.co")},
 		{"port", "https://abc.supabase.co:8443/x", key, "https://abc.supabase.co:8443/x", key, "https://abc.supabase.co:8443",
-			"connect-src 'self' https://abc.supabase.co:8443; report-to csp; report-uri /csp-report", cfg("https://abc.supabase.co:8443/x")},
-		{"userinfo", "https://u:p@abc.supabase.co/", key, "https://u:p@abc.supabase.co/", key, "https://abc.supabase.co", wantReportOnlySupa, cfg("https://u:p@abc.supabase.co/")},
-		{"';' injection", "https://abc.supabase.co;script-src", key, "https://abc.supabase.co;script-src", key, "", wantReportOnlySelf, cfg("https://abc.supabase.co;script-src")},
+			"; connect-src 'self' https://abc.supabase.co:8443; report-to csp; report-uri /csp-report", cfg("https://abc.supabase.co:8443/x")},
+		{"userinfo", "https://u:p@abc.supabase.co/", key, "https://u:p@abc.supabase.co/", key, "https://abc.supabase.co", wantConnectSrcSupa, cfg("https://u:p@abc.supabase.co/")},
+		{"';' injection", "https://abc.supabase.co;script-src", key, "https://abc.supabase.co;script-src", key, "", wantConnectSrcSelf, cfg("https://abc.supabase.co;script-src")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SUPABASE_URL", tc.url)
@@ -182,7 +181,7 @@ func TestCSPReportOnlyConnectSrcTable(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("GET /: status = %d, want 200", rec.Code)
 			}
-			checkReportOnly(t, "/", rec.Header(), tc.wantRO)
+			checkEnforcingConnectSrc(t, "/", rec.Header(), tc.wantTail)
 			if got := getRoot(t, "/config.json").Body.String(); got != tc.wantCfg {
 				t.Errorf("GET /config.json body = %q, want %q", got, tc.wantCfg)
 			}

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// POST /csp-report, the collector for the connect-src Report-Only policy. Every
+// POST /csp-report, the collector for the enforcing connect-src policy. Every
 // request goes through handleRoot, which main()'s "/" catch-all serves, so a
 // missing route fails here too.
 

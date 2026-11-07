@@ -374,13 +374,11 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			// Never stored, so a deploy is visible on the next load and a cached
 			// copy cannot replay one nonce to every visitor.
 			w.Header().Set("Cache-Control", "no-store")
-			w.Header().Set(cspHeaderName, contentSecurityPolicy(nonce))
-			// connect-src, report-only for now, on this response only. No
-			// script-src, style-src or nonce: those stay in the enforcing
-			// header above.
+			// One enforcing header: script-src, style-src and connect-src,
+			// reported to /csp-report.
 			_, _, supaOrigin := supabaseConfig()
 			w.Header().Set(reportingEndpointsName, reportingEndpointsValue)
-			w.Header().Set(cspReportOnlyHeaderName, cspReportOnly(supaOrigin))
+			w.Header().Set(cspHeaderName, contentSecurityPolicy(nonce)+cspConnectSrc(supaOrigin))
 			_, _ = w.Write(data)
 			return
 		}
@@ -395,7 +393,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		// build version.
 		handleVersion(w, r)
 	case "/csp-report":
-		// The collector for the connect-src Report-Only policy
+		// The collector for the enforcing policy
 		// (csp_report.go). Not under /api/, like /version: the browser sends
 		// reports without the page's bearer token.
 		handleCSPReport(w, r)
