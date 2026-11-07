@@ -58,7 +58,7 @@ function renumber(root) { let i = 0; root._order = i++; for (const el of root.wa
 
 // ── sandbox with the real page script ────────────────────────────────────
 const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const script = html.match(/<script nonce="__CSP_NONCE__">([\s\S]*?)<\/script>/)[1];
 
 const listeners = {};
 const alerts = [];
