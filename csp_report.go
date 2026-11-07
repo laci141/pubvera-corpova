@@ -17,27 +17,26 @@ import (
 	"unicode/utf8"
 )
 
-// connect-src, PR A: connect-src is not enforced yet. The index response also
-// carries a Content-Security-Policy-Report-Only header with connect-src alone
-// ('self', plus the Supabase origin when /config.json hands the page a
-// Supabase config), reported to POST /csp-report (handleCSPReport). The
-// enforcing Content-Security-Policy header (main.go) is unchanged.
+// connect-src, PR B: connect-src is enforced. The one enforcing
+// Content-Security-Policy header on the index response (main.go) ends with
+// connect-src ('self', plus the Supabase origin when /config.json hands the
+// page a Supabase config), and every violation is reported to POST
+// /csp-report (handleCSPReport).
 // supabaseConfig, cspHostRE and the collector are copied from Bibliovera
 // (csp.go, PR #74) and Recallis (csp_report.go) with identical behaviour.
 const (
-	cspReportOnlyHeaderName = "Content-Security-Policy-Report-Only"
-	reportingEndpointsName  = "Reporting-Endpoints"
+	reportingEndpointsName = "Reporting-Endpoints"
 	// The endpoint URL is relative; the browser resolves it against the
 	// response URL.
 	reportingEndpointsValue = `csp="/csp-report"`
 )
 
-// cspReportOnly is the connect-src Report-Only policy for one index response.
-// It carries connect-src alone: no script-src, style-src or nonce, because a
-// copy of those here would report every blocked inline script or style a
-// second time.
-func cspReportOnly(origin string) string {
-	src := "connect-src 'self'"
+// cspConnectSrc is the tail of the enforcing policy for one index response:
+// it starts with "; " so it appends to contentSecurityPolicy(nonce), and it
+// carries connect-src plus the report-to / report-uri directives, which apply
+// to every directive of that one header.
+func cspConnectSrc(origin string) string {
+	src := "; connect-src 'self'"
 	if origin != "" {
 		src += " " + origin
 	}
@@ -46,7 +45,7 @@ func cspReportOnly(origin string) string {
 
 // supabaseConfig is the one place that decides whether the page has a Supabase
 // config. /config.json hands url and key to the page; the index response puts
-// origin into the connect-src Report-Only policy. Both call this per request,
+// origin into the enforcing connect-src. Both call this per request,
 // so the page and the header cannot disagree, and an environment change needs
 // no restart.
 //
@@ -127,7 +126,7 @@ type cspViolation struct {
 	disposition, directive, blocked, document string
 }
 
-// handleCSPReport receives the Report-Only reports: report-to
+// handleCSPReport receives the enforcing policy's reports: report-to
 // (application/reports+json, an array of reports) and report-uri
 // (application/csp-report, one object). It logs one line per violation with
 // the blocked origin and the page path only: no query, fragment, header,
