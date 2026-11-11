@@ -16,7 +16,13 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const src = fs.readFileSync(path.join(__dirname, "..", "Dockerfile"), "utf8").replace(/\r/g, "");
+// Normalise so a CRLF worktree and the LF CI checkout read the same text:
+// strip a BOM, CRLF/CR -> LF, drop trailing newlines.
+const src = fs
+  .readFileSync(path.join(__dirname, "..", "Dockerfile"), "utf8")
+  .replace(/^﻿/, "")
+  .replace(/\r\n?/g, "\n")
+  .replace(/\n+$/, "");
 const lines = src.split("\n");
 
 let failed = 0;
@@ -56,12 +62,14 @@ const bareUpgrade = src
   .filter((l) => /\bapk\s+upgrade(\s+--?[\w-]+)*\s*(&&|;|$)/.test(l));
 check("(d) no apk upgrade without a package name (found " + bareUpgrade.length + ")", bareUpgrade.length === 0);
 
-// sha256 of the LF-normalised text before the last FROM, measured on db22445.
+// sha256 of the normalised text before the last FROM, measured on main
+// 1d919eb (Go 1.27.4 builders). CI runs the PR merge commit, so this pin must
+// match origin/main's build stages; re-pin it when main changes them.
 const buildStages = lines.slice(0, lastFrom).join("\n") + "\n";
 const hash = crypto.createHash("sha256").update(buildStages).digest("hex");
 check(
   "(e) build stages unchanged (sha256 " + hash.slice(0, 12) + ")",
-  hash === "210504681b410486475bb1c67c043274311d0ea7c1148b433ce43a6207067cc2"
+  hash === "b85bc72b0f1f321c087e66e780c5859d80e4b1bff1e12289cadb68c6ab048541"
 );
 
 if (failed) {
