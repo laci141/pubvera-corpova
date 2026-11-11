@@ -2202,7 +2202,19 @@
         if (year)    lines.push('  year    = {' + year + '},');
         if (doi)     lines.push('  doi     = {' + doi + '},');
         if (doi)     lines.push('  url     = {https://doi.org/' + doi + '},');
+        // A reader cites from the .bib, not from the page, so the retraction
+        // flag the cards show has to travel with the entry. The wording mirrors
+        // the cards: "declared" is the publisher's own marker in the title,
+        // "flagged" is the source index only and demonstrably over-marks, so it
+        // says so. Rows without the field (older data, other exports) get nothing.
+        const retr = String(r.retraction || '');
+        const retrNote = retr === 'retracted-declared'
+          ? 'RETRACTED: this paper has been retracted, excluded from the Corpova score'
+          : retr === 'retracted-flagged'
+            ? 'Flagged as retracted in the source index, not confirmed from the title, excluded from the Corpova score. May be a correction rather than a retraction, verify before citing'
+            : '';
         lines.push('  note    = {Exported from Corpova; metadata via OpenAlex (CC0)'
+          + (retrNote ? '. ' + retrNote : '')
           + (reason ? '. Exclusion reason: ' + reason : '') + '}');
         lines.push('}');
         out.push(lines.join('\n'));
