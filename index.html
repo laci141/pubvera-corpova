@@ -2818,6 +2818,12 @@
       if (w.design) chips += `<span class="study-chip">${esc(w.design)}</span>`;
       if (stance) chips += `<span class="study-chip ${stanceClass}">${esc(stance)}</span>`;
       if (w.stance_confidence != null) chips += `<span class="study-chip">confidence ${fx(w.stance_confidence)}</span>`;
+      // The CLI caps abstracts at 1500 characters and sets abstract_truncated
+      // when it cut one. The page never shows abstracts, only the exports do,
+      // so this chip is the one place a reader learns the exported text is
+      // shortened. Strict === true: older CLI builds omit the field and must
+      // not claim anything either way.
+      if (w.abstract_truncated === true) chips += `<span class="study-chip" title="The abstract was cut at 1500 characters; the export holds the shortened text.">abstract shortened</span>`;
       const reason = ex && ex.reason
         ? `<div class="ai-excluded-reason">🚫 ${esc(ex.reason)}</div>`
         : '';
