@@ -1046,6 +1046,15 @@
     .pyramid-table.pyramid-table { width: 100%; font-size: 0.9rem; }
     .pyramid-example.pyramid-example { font-size: 0.85rem; opacity: 0.85; }
     .pyramid-note.pyramid-note { margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.75; }
+    /* Keyboard focus ring for the role=button bento cards. */
+    .bento-card:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+    /* Reduced motion: no entrance animations, hover lifts or smooth scroll.
+       The .loading spinner keeps spinning (it is a progress signal). */
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .modal, .modal-content, .results-content { animation: none; }
+      .bento-card:hover, .btn:hover, .btn:active { transform: none; }
+    }
   </style>
 </head>
 <body>
@@ -1093,23 +1102,23 @@
 
   <!-- BENTO GRID -->
   <section class="bento-grid">
-    <div class="bento-card consensus" data-action="openModal" data-endpoint="consensus">
+    <div class="bento-card consensus" role="button" tabindex="0" data-action="openModal" data-endpoint="consensus">
       <div class="bento-icon">📊</div>
       <div class="bento-label">Consensus</div>
     </div>
-    <div class="bento-card evidence" data-action="openModal" data-endpoint="evidence">
+    <div class="bento-card evidence" role="button" tabindex="0" data-action="openModal" data-endpoint="evidence">
       <div class="bento-icon">🔬</div>
       <div class="bento-label">Evidence Pyramid</div>
     </div>
-    <div class="bento-card compare" data-action="openModal" data-endpoint="compare">
+    <div class="bento-card compare" role="button" tabindex="0" data-action="openModal" data-endpoint="compare">
       <div class="bento-icon">⚖️</div>
       <div class="bento-label">Compare Claims</div>
     </div>
-    <div class="bento-card gaps" data-action="openModal" data-endpoint="gaps">
+    <div class="bento-card gaps" role="button" tabindex="0" data-action="openModal" data-endpoint="gaps">
       <div class="bento-icon">🔍</div>
       <div class="bento-label">Research Gaps</div>
     </div>
-    <div class="bento-card controversies" data-action="openModal" data-endpoint="controversies">
+    <div class="bento-card controversies" role="button" tabindex="0" data-action="openModal" data-endpoint="controversies">
       <div class="bento-icon">⚡</div>
       <div class="bento-label">Controversies</div>
     </div>
@@ -1117,11 +1126,11 @@
 
   <!-- MODALS -->
   <!-- CONSENSUS MODAL -->
-  <div class="modal" id="consensusModal">
+  <div class="modal" id="consensusModal" role="dialog" aria-modal="true" aria-labelledby="consensusModalTitle">
     <div class="modal-content tone-cyan">
       <div class="modal-header">
-        <h2>📊 Consensus Analysis</h2>
-        <button class="close-btn" data-action="closeModal" data-endpoint="consensus">&times;</button>
+        <h2 id="consensusModalTitle">📊 Consensus Analysis</h2>
+        <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="consensus">&times;</button>
       </div>
       <div id="consensusForm" class="form-group">
         <label>Claim</label>
@@ -1185,11 +1194,11 @@
   </div>
 
   <!-- EVIDENCE MODAL -->
-  <div class="modal" id="evidenceModal">
+  <div class="modal" id="evidenceModal" role="dialog" aria-modal="true" aria-labelledby="evidenceModalTitle">
     <div class="modal-content tone-purple">
       <div class="modal-header">
-        <h2>🔬 Evidence Pyramid</h2>
-        <button class="close-btn" data-action="closeModal" data-endpoint="evidence">&times;</button>
+        <h2 id="evidenceModalTitle">🔬 Evidence Pyramid</h2>
+        <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="evidence">&times;</button>
       </div>
       <div id="evidenceForm" class="form-group">
         <label>Claim</label>
@@ -1253,11 +1262,11 @@
   </div>
 
   <!-- COMPARE MODAL -->
-  <div class="modal" id="compareModal">
+  <div class="modal" id="compareModal" role="dialog" aria-modal="true" aria-labelledby="compareModalTitle">
     <div class="modal-content tone-pink">
       <div class="modal-header">
-        <h2>⚖️ Compare Claims</h2>
-        <button class="close-btn" data-action="closeModal" data-endpoint="compare">&times;</button>
+        <h2 id="compareModalTitle">⚖️ Compare Claims</h2>
+        <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="compare">&times;</button>
       </div>
       <div id="compareForm" class="form-group">
         <label>Claim 1</label>
@@ -1323,11 +1332,11 @@
   </div>
 
   <!-- GAPS MODAL -->
-  <div class="modal" id="gapsModal">
+  <div class="modal" id="gapsModal" role="dialog" aria-modal="true" aria-labelledby="gapsModalTitle">
     <div class="modal-content tone-amber">
       <div class="modal-header">
-        <h2>🔍 Research Gaps</h2>
-        <button class="close-btn" data-action="closeModal" data-endpoint="gaps">&times;</button>
+        <h2 id="gapsModalTitle">🔍 Research Gaps</h2>
+        <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="gaps">&times;</button>
       </div>
       <div id="gapsForm" class="form-group">
         <label>Claim</label>
@@ -1391,11 +1400,11 @@
   </div>
 
   <!-- CONTROVERSIES MODAL -->
-  <div class="modal" id="controversiesModal">
+  <div class="modal" id="controversiesModal" role="dialog" aria-modal="true" aria-labelledby="controversiesModalTitle">
     <div class="modal-content tone-red">
       <div class="modal-header">
-        <h2>⚡ Controversies</h2>
-        <button class="close-btn" data-action="closeModal" data-endpoint="controversies">&times;</button>
+        <h2 id="controversiesModalTitle">⚡ Controversies</h2>
+        <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="controversies">&times;</button>
       </div>
       <div id="controversiesForm" class="form-group">
         <label>Claim</label>
@@ -1711,15 +1720,20 @@
     });
 
     // Copy the hero claim into a freshly-opened modal's claim field for convenience.
-    function openModal(endpoint) {
+    // modalOpener remembers what opened each modal so close can hand focus back.
+    const modalOpener = {};
+    function openModal(endpoint, opener) {
       const modal = document.getElementById(`${endpoint}Modal`);
       if (!modal) return;
+      modalOpener[endpoint] = opener || document.activeElement;
       const hero = document.getElementById('heroClaimInput');
       if (hero && hero.value.trim()) {
         const target = document.getElementById(`${endpoint}Claim`) || document.getElementById(`${endpoint}Claim1`);
         if (target && !target.value.trim()) target.value = hero.value.trim();
       }
       modal.classList.add('active');
+      const closeBtn = modal.querySelector('.close-btn');
+      if (closeBtn) closeBtn.focus();
       // A hidden modal has clientWidth 0, so tick positions measured before it
       // opened are wrong. Recompute now that the panel has real width.
       if (typeof paintLimit === 'function') {
@@ -1729,7 +1743,11 @@
 
     function closeModal(endpoint) {
       const modal = document.getElementById(`${endpoint}Modal`);
-      if (modal) modal.classList.remove('active');
+      if (!modal || !modal.classList.contains('active')) return;
+      modal.classList.remove('active');
+      const opener = modalOpener[endpoint];
+      modalOpener[endpoint] = null;
+      if (opener && opener.isConnected && opener.focus) opener.focus();
     }
 
     // escape untrusted text (study titles, LLM/CLI strings) before injecting as HTML
@@ -3485,7 +3503,7 @@
     // handler attributes, so arguments travel in data-* attributes instead.
     // Unknown action names do nothing.
     const clickActions = {
-      openModal: el => openModal(el.dataset.endpoint),
+      openModal: el => openModal(el.dataset.endpoint, el),
       closeModal: el => closeModal(el.dataset.endpoint),
       runAnalysis: el => runAnalysis(el.dataset.endpoint),
       resetModal: el => resetModal(el.dataset.endpoint),
@@ -3563,6 +3581,35 @@
       else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
       else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
       else if (e.key === 'Tab') closeExportMenus(opener); // focus lands on the trigger, then Tab moves on
+    });
+
+    // ── Modal keyboard: cards open on Enter/Space, Tab is trapped in the open
+    // modal, Escape closes it. Registered after the Export menu listener, so
+    // an Escape that closed a menu arrives here defaultPrevented and is ignored.
+    document.addEventListener('keydown', e => {
+      const t = e.target;
+      if (t && t.matches && t.matches('.bento-card') && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        openModal(t.dataset.endpoint, t);
+        return;
+      }
+      const open = document.querySelectorAll('.modal.active');
+      const modal = open[open.length - 1];
+      if (!modal) return;
+      if (e.key === 'Escape') {
+        if (e.defaultPrevented) return;
+        e.preventDefault();
+        closeModal(modal.id.replace('Modal', ''));
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const f = Array.from(modal.querySelectorAll('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+        .filter(el => !el.disabled && el.getClientRects().length > 0);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      const inside = modal.contains(document.activeElement);
+      if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
     });
 
     // Load settings on page load
