@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <title>Corpova — Evidence Consensus Analysis</title>
   <meta charset="UTF-8">
@@ -60,7 +60,7 @@
       align-items: center;
       padding: 2rem 2rem 1.5rem;
       text-align: center;
-      background: linear-gradient(180deg, rgba(15,15,15,1) 0%, rgba(26,26,46,0.8) 100%);
+      background: linear-gradient(180deg, rgba(15,15,15,0.35) 0%, rgba(26,26,46,0.25) 100%);
     }
     .hero h1 {
       font-size: 3.5rem;
@@ -83,7 +83,8 @@
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 1rem;
       padding: 1.5rem;
-      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(15px);
+      backdrop-filter: blur(15px);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     }
     .claim-input-box textarea {
@@ -104,7 +105,7 @@
       box-shadow: inset 0 0 1rem rgba(0, 212, 255, 0.1);
     }
     .claim-input-box textarea::placeholder {
-      color: #666;
+      color: #848484;
     }
 
     /* BENTO GRID (5 action buttons) */
@@ -123,7 +124,8 @@
       padding: 2rem;
       cursor: pointer;
       transition: all 0.3s ease;
-      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(15px);
+      backdrop-filter: blur(15px);
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -175,6 +177,7 @@
       width: 100%;
       height: 100%;
       background: rgba(0, 0, 0, 0.7);
+      -webkit-backdrop-filter: blur(5px);
       backdrop-filter: blur(5px);
       justify-content: center;
       align-items: center;
@@ -197,7 +200,8 @@
       width: 640px;
       max-height: 85vh;
       overflow-y: auto;
-      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(15px);
+      backdrop-filter: blur(15px);
       box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
       animation: slideUp 0.3s ease;
     }
@@ -223,6 +227,12 @@
       cursor: pointer;
       transition: color 0.2s;
       line-height: 1;
+      /* 44x44 touch target; the glyph keeps its 2rem size. */
+      min-width: 44px;
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
     .close-btn:hover {
       color: #e0e0e0;
@@ -282,8 +292,8 @@
       border-radius: 0.75rem;
       padding: 1rem 1.25rem;
       margin-bottom: 0.75rem;
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(15px);
+      backdrop-filter: blur(15px);
     }
     .study-title {
       font-weight: 600;
@@ -319,7 +329,7 @@
     .study-link:hover { text-decoration: underline; }
     .study-empty {
       font-size: 0.85rem;
-      color: #777;
+      color: #848484;
       font-style: italic;
       margin-bottom: 0.5rem;
     }
@@ -396,8 +406,8 @@
       border-radius: 0.5rem;
       padding: 0.6rem 0.9rem;
       margin-bottom: 1rem;
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(15px);
+      backdrop-filter: blur(15px);
     }
 
     /* EXCLUDED STUDIES (AI relevance/quality filter) */
@@ -407,8 +417,8 @@
       border: 1px solid rgba(239, 68, 68, 0.25);
       border-radius: 0.6rem;
       padding: 0.8rem 1rem;
-      -webkit-backdrop-filter: blur(12px);
-      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(15px);
+      backdrop-filter: blur(15px);
     }
     .excluded-head {
       font-size: 0.85rem;
@@ -444,8 +454,8 @@
       border: 1px solid rgba(251, 191, 36, 0.3);
       border-radius: 0.6rem;
       padding: 0.8rem 1rem;
-      -webkit-backdrop-filter: blur(12px);
-      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(15px);
+      backdrop-filter: blur(15px);
     }
     .contradiction-head {
       font-size: 0.85rem;
@@ -476,8 +486,8 @@
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid rgba(239, 68, 68, 0.25);
       border-radius: 0.6rem;
-      -webkit-backdrop-filter: blur(12px);
-      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(15px);
+      backdrop-filter: blur(15px);
     }
     .excluded-section summary {
       font-size: 0.9rem;
@@ -509,8 +519,8 @@
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid rgba(0, 212, 255, 0.22);
       border-radius: 0.6rem;
-      -webkit-backdrop-filter: blur(12px);
-      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(15px);
+      backdrop-filter: blur(15px);
     }
     .all-studies-section summary {
       font-size: 0.9rem;
@@ -683,7 +693,7 @@
     footer {
       text-align: center;
       padding: 2rem;
-      color: #666;
+      color: #848484;
       border-top: 1px solid rgba(255, 255, 255, 0.05);
     }
     footer a {
@@ -711,6 +721,10 @@
     }
     .disclaimer a { color: #00d4ff; text-decoration: none; }
     .disclaimer a:hover { text-decoration: underline; }
+    /* 860px + 2 x 1rem: below this the panel would touch the viewport edge. */
+    @media (max-width: 900px) {
+      .disclaimer { margin: 0 1rem 2.5rem; }
+    }
     @media (max-width: 768px) {
       .disclaimer {
         margin: 0 1rem 2rem;
@@ -980,7 +994,20 @@
       .hero { padding-top: 1.5rem; }
       .claim-input-box textarea { height: 80px; }
       .modal-content { max-width: 95%; padding: 1.5rem; }
-      .bento-grid { grid-template-columns: 1fr; }
+      .bento-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding: 2rem 1rem; }
+      .bento-card { min-height: 120px; padding: 1.25rem; }
+      .bento-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+      .bento-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+      .bento-label { font-size: 1.05rem; }
+    }
+    /* Glass panels blur less on phones (glass-panel baseline: 15px / 12px). */
+    @media (max-width: 600px) {
+      .claim-input-box, .bento-card, .modal-content, .study-card,
+      .no-synthesis-note, .excluded-block, .contradiction-block,
+      .excluded-section, .all-studies-section {
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
+      }
     }
     /* ---- Classes that replace inline style attributes -----------------------
        A Content-Security-Policy with style-src-attr 'none' blocks every inline
@@ -1434,7 +1461,7 @@
   <!-- FOOTER -->
   <footer>
     <p>Corpova — Evidence Consensus Analysis · LLM-assisted synthesis over open scholarly metadata</p>
-    <p><a href="https://github.com/laci141/pubvera-corpova">GitHub</a> | Powered by <a href="https://github.com/mvanhorn/printing-press-library">Printing Press Library</a></p>
+    <p>Powered by <a href="https://github.com/mvanhorn/printing-press-library">Printing Press Library</a></p>
     <span id="app-version"></span>
   </footer>
 
