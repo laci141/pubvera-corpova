@@ -17,9 +17,10 @@
 //   - A key lives in memory only for the duration of one request and one
 //     outbound HTTPS call.
 //   - The key is NEVER logged, printed, persisted, or passed to the child CLI.
-//     buildChildEnv() strips every known provider key out of os.Environ() —
-//     INCLUDING the server's own DEEPSEEK_API_KEY, which is why that variable
-//     must stay listed in allProviderEnvVars.
+//     buildChildEnv() passes the child ONLY the variables in childEnvAllowlist;
+//     every other variable of this process (the server's own DEEPSEEK_API_KEY,
+//     REDIS_PASSWORD, INTERNAL_RECORD_TOKEN, anything added later) is dropped.
+//     allProviderEnvVars is a second, explicit deny on top of that allowlist.
 //   - Any CLI stderr or LLM provider diagnostic surfaced to the client passes
 //     through redact()/sanitizeLLMError(), which remove the key substring so a
 //     key echoed in an error can never escape. redact() is given b.key, so a
@@ -978,23 +979,73 @@ func handleCompare(w http.ResponseWriter, r *http.Request) {
 	runCLIJSON(w, r, b, "compare", claims, args, cacheKey("compare", limit, claims))
 }
 
-// buildChildEnv returns the environment for the child CLI process: the
-// server's own environment with EVERY provider key removed. The child is
-// always keyless — keys are used only for the in-process LLM call and
-// must never reach a subprocess.
+// childEnvAllowlist is the complete set of variables the child CLI may
+// inherit. Everything else in this process's environment is dropped, so a
+// secret added to the server later (a token, a password, a new provider key)
+// can never reach the subprocess by default: it has to be listed here on
+// purpose.
+//
+// What the CLI needs at the pinned commit (measured with a grep for Getenv,
+// UserHomeDir, UserConfigDir and TempDir in library/other/scientific-consensus):
+// HOME for its config and cache paths, TMPDIR as the fallback directory, and
+// the two optional source keys NCBI_API_KEY and SEMANTIC_SCHOLAR_API_KEY
+// (PubMed and Semantic Scholar rate limits). PATH, TZ, the locale and the
+// TLS / proxy variables are the standard process environment Go's runtime,
+// net/http and crypto/x509 read. Variables the CLI reads that are deliberately
+// NOT here: every LLM provider key (the child stays keyless), and
+// SCIENTIFIC_CONSENSUS_BASE_URL / SCIENTIFIC_CONSENSUS_CONFIG /
+// SCIENTIFIC_CONSENSUS_FEEDBACK_* / PRINTING_PRESS_* / KALM_SERVER_URL, which
+// would redirect, reconfigure or report from the child.
+var childEnvAllowlist = []string{
+	"PATH",
+	"HOME",
+	"TMPDIR",
+	"TZ",
+	"LANG",
+	"LC_ALL",
+	"SSL_CERT_FILE",
+	"SSL_CERT_DIR",
+	"HTTP_PROXY",
+	"HTTPS_PROXY",
+	"NO_PROXY",
+	"http_proxy",
+	"https_proxy",
+	"no_proxy",
+	"NCBI_API_KEY",
+	"SEMANTIC_SCHOLAR_API_KEY",
+}
+
+// buildChildEnv returns the environment for the child CLI process: only the
+// variables in childEnvAllowlist, in os.Environ() order, minus any provider
+// key. The provider-key check is redundant with the allowlist today and is
+// kept deliberately: if someone ever adds a provider key to the allowlist by
+// mistake, the child still stays keyless. Keys are used only for the
+// in-process LLM call and must never reach a subprocess.
 func buildChildEnv() []string {
-	strip := make(map[string]struct{}, len(allProviderEnvVars))
-	for _, v := range allProviderEnvVars {
-		strip[v] = struct{}{}
+	return filterChildEnv(os.Environ())
+}
+
+// filterChildEnv is buildChildEnv on an explicit environment, for tests.
+func filterChildEnv(base []string) []string {
+	allow := make(map[string]struct{}, len(childEnvAllowlist))
+	for _, v := range childEnvAllowlist {
+		allow[v] = struct{}{}
 	}
-	base := os.Environ()
-	out := make([]string, 0, len(base))
+	deny := make(map[string]struct{}, len(allProviderEnvVars))
+	for _, v := range allProviderEnvVars {
+		deny[v] = struct{}{}
+	}
+	out := make([]string, 0, len(childEnvAllowlist))
 	for _, kv := range base {
-		name := kv
-		if i := strings.IndexByte(kv, '='); i >= 0 {
-			name = kv[:i]
+		i := strings.IndexByte(kv, '=')
+		if i <= 0 {
+			continue // no name: nothing to match against an allowlist
 		}
-		if _, drop := strip[name]; drop {
+		name := kv[:i]
+		if _, ok := allow[name]; !ok {
+			continue // not needed by the CLI: never inherited
+		}
+		if _, drop := deny[name]; drop {
 			continue // never inherit the server's own provider keys
 		}
 		out = append(out, kv)
