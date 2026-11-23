@@ -1504,7 +1504,7 @@
     const providerDefaults = {
       anthropic: 'claude-haiku-5-5',
       openai: 'gpt-6-luna',
-      gemini: 'gemini-3.5-flash',
+      gemini: 'gemini-3.5-flash-lite',
       groq: 'llama-3.3-70b-versatile',
       mistral: 'mistral-small-latest',
       deepseek: 'deepseek-flash',
@@ -1532,30 +1532,27 @@
       ],
       openai: [
         { id: 'gpt-6-luna', note: 'cheapest, high volume' },
-        { id: 'gpt-6.1-sol', note: 'balanced' },
-        { id: 'gpt-6-astra', note: 'most capable, highest cost' }
+        { id: 'gpt-6.2-sol', note: 'balanced, newest Sol' },
+        { id: 'gpt-6.1-terra', note: 'production tier, mid cost' },
+        { id: 'gpt-6.2-astra', note: 'most capable, highest cost' }
       ],
       deepseek: [
         { id: 'deepseek-flash', note: 'fast + cheap (V4.1 Flash)' },
         { id: 'deepseek-v4-pro', note: 'more thorough (V4 Pro)' }
       ],
-      // GEMINI ORDER AND NOTES — measured 2026-09-02, not marketing copy.
-      // The same claim run through all three flash models with a live key:
-      // 3.7-flash answered HTTP 503 once and then failed twice with
-      // `context deadline exceeded`; 3.6-flash returned nothing; 3.5-flash
-      // produced a full synthesis at confidence 0.90. The notes used to say
-      // 3.7 was "newest, most capable" and 3.5 was "legacy" — which steered
-      // users toward the model that does not answer and away from the one
-      // that does. A note that contradicts the measurement is worse than no
-      // note. RE-MEASURE before reordering: this is one provider's capacity
-      // on one day, and restored throughput would make these lines stale
-      // rather than wrong.
+      // GEMINI ORDER AND NOTES — measured, not marketing copy. Re-measured
+      // 2026-11-23 with minimal JSON requests on the OpenAI-compat endpoint:
+      // 3.5-flash-lite answered 6 of 8, 3.8-flash 2 of 8, 3.6-flash 1 of 3,
+      // 3.5-flash 0 of 3, gemini-4-hydrogen 0 of 15; every miss was HTTP 503
+      // "high demand". 3.5-flash and 3.7-flash are deprecated and rerouted by
+      // Google, so they are no longer offered. A note that contradicts the
+      // measurement is worse than no note. RE-MEASURE before reordering: this
+      // is one provider's capacity on one day, and restored throughput would
+      // make these lines stale rather than wrong.
       gemini: [
-        { id: 'gemini-3.5-flash', note: 'answers reliably (measured 2026-09-04)' },
-        { id: 'gemini-3.5-flash-lite', note: 'cheapest' },
-        { id: 'gemini-3.6-flash', note: 'HTTP 503 overloaded when tested 2026-09-04' },
-        { id: 'gemini-3.7-flash', note: 'newest, but unreliable: invalid JSON 2026-09-04, timed out 2026-08-31' },
-        { id: 'gemini-3.8-flash', note: 'HTTP 503 overloaded when tested 2026-09-04' }
+        { id: 'gemini-3.5-flash-lite', note: 'answered 6 of 8 (measured 2026-11-23)' },
+        { id: 'gemini-3.8-flash', note: 'often overloaded: 2 of 8 (measured 2026-11-23)' },
+        { id: 'gemini-3.6-flash', note: 'often overloaded: 1 of 3 (measured 2026-11-23)' }
       ]
     };
 

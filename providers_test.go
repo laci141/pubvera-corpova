@@ -216,14 +216,17 @@ func TestSynthesisPromptUsesCompactedJSON(t *testing.T) {
 }
 
 // TestGeminiDefaultModelIsTheMeasuredWorkingOne pins the gemini default to the
-// only gemini model measured to answer. On 2026-09-04 the live log showed
-// gemini-3.7-flash returning invalid JSON and 3.6/3.8-flash returning HTTP 503,
-// while gemini-3.5-flash succeeded twice; index.html recommends 3.5 in its
-// datalist notes, and an empty model field falls through to this default, so a
-// silent move here would make the UI recommend one model and run another.
+// gemini model measured to answer most often. Re-measured 2026-11-23 with
+// minimal JSON requests on the OpenAI-compat endpoint: gemini-3.5-flash-lite
+// answered 6 of 8 (reasoning_effort "low" included), gemini-3.8-flash 2 of 8,
+// gemini-3.6-flash 1 of 3, gemini-3.5-flash 0 of 3; every miss was HTTP 503
+// "high demand". Google's deprecations page lists gemini-3.5-flash as
+// deprecated and rerouted. index.html lists flash-lite first in its datalist
+// notes, and an empty model field falls through to this default, so a silent
+// move here would make the UI recommend one model and run another.
 // Re-measure before changing it.
 func TestGeminiDefaultModelIsTheMeasuredWorkingOne(t *testing.T) {
-	const want = "gemini-3.5-flash"
+	const want = "gemini-3.5-flash-lite"
 	if got := providers["gemini"].DefaultModel; got != want {
 		t.Errorf("providers[gemini].DefaultModel = %q, want %q", got, want)
 	}

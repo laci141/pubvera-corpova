@@ -68,7 +68,7 @@ type providerSpec struct {
 var providers = map[string]providerSpec{
 	"anthropic":  {"https://api.anthropic.com/v1", "claude-haiku-5-5", styleAnthropic, false},
 	"openai":     {"https://api.openai.com/v1", "gpt-6-luna", styleOpenAI, false},
-	"gemini":     {"https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash", styleOpenAI, false},
+	"gemini":     {"https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash-lite", styleOpenAI, false},
 	"groq":       {"https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", styleOpenAI, false},
 	"mistral":    {"https://api.mistral.ai/v1", "mistral-small-latest", styleOpenAI, false},
 	"deepseek":   {"https://api.deepseek.com", "deepseek-flash", styleOpenAI, false},
