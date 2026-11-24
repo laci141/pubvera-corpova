@@ -703,6 +703,8 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		// HTTP 200 means the provider billed this call; hand the counts to the caller.
 		return nil, &llmBadShapeError{msg: msg, Model: model, Usage: usage}
 	}
+	// The model must not judge a study whose abstract it never received.
+	syn.StudyStances = unclearWhenNoAbstract(syn.StudyStances, cliJSON)
 	syn.Model = model
 	syn.InputTokens = usage.InputTokens
 	syn.OutputTokens = usage.OutputTokens
@@ -913,6 +915,95 @@ func cleanStudyStances(in []studyStance) []studyStance {
 		return nil
 	}
 	return out
+}
+
+// unclearWhenNoAbstract forces stance "unclear" on every study_stances entry
+// whose study reached the model with an empty or missing abstract. Measured
+// 2026-11-24 (gemini-3.5-flash-lite, IMT/COPD): Koppers 2006 has abstract ""
+// and the model still returned "supports" with the reason "Abstract
+// indicates…". The prompt already says to use "unclear" there; an instruction
+// the model ignores needs an answer that does not depend on the model. Only
+// the stance changes: the entry stays, and the reason says why.
+//
+// A study counts when any JSON object in the CLI output has a "title" and a
+// "stance" (the CLI's study shape) and no non-blank "abstract". Matching is by
+// DOI, else by normalized title. When the same study appears twice and one
+// copy carries an abstract, the abstract wins (it is not forced).
+func unclearWhenNoAbstract(in []studyStance, cliJSON []byte) []studyStance {
+	if len(in) == 0 || len(cliJSON) == 0 {
+		return in
+	}
+	var root any
+	if err := json.Unmarshal(cliJSON, &root); err != nil {
+		return in
+	}
+	emptyDOI, emptyTitle := map[string]bool{}, map[string]bool{}
+	fullDOI, fullTitle := map[string]bool{}, map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case []any:
+			for _, e := range x {
+				walk(e)
+			}
+		case map[string]any:
+			title, okT := x["title"].(string)
+			_, okS := x["stance"]
+			if okT && okS && strings.TrimSpace(title) != "" {
+				abs, _ := x["abstract"].(string)
+				doi, _ := x["doi"].(string)
+				d, t := normStanceDOI(doi), normStanceTitle(title)
+				if strings.TrimSpace(abs) == "" {
+					if d != "" {
+						emptyDOI[d] = true
+					}
+					emptyTitle[t] = true
+				} else {
+					if d != "" {
+						fullDOI[d] = true
+					}
+					fullTitle[t] = true
+				}
+			}
+			for _, e := range x {
+				walk(e)
+			}
+		}
+	}
+	walk(root)
+	if len(emptyDOI) == 0 && len(emptyTitle) == 0 {
+		return in
+	}
+	out := make([]studyStance, len(in))
+	copy(out, in)
+	for i, s := range out {
+		d, t := normStanceDOI(s.DOI), normStanceTitle(s.Title)
+		var noAbs bool
+		if d != "" && (emptyDOI[d] || fullDOI[d]) {
+			noAbs = emptyDOI[d] && !fullDOI[d]
+		} else {
+			noAbs = emptyTitle[t] && !fullTitle[t]
+		}
+		if noAbs && s.Stance != "unclear" {
+			out[i].Stance = "unclear"
+			out[i].Reason = "no abstract available to judge"
+		}
+	}
+	return out
+}
+
+func normStanceDOI(d string) string {
+	d = strings.ToLower(strings.TrimSpace(d))
+	for _, p := range []string{"https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/"} {
+		d = strings.TrimPrefix(d, p)
+	}
+	return d
+}
+
+func normStanceTitle(t string) string {
+	return strings.Join(strings.FieldsFunc(strings.ToLower(t), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}), " ")
 }
 
 // maxContradictions caps the reported list in line with the existing caps on
