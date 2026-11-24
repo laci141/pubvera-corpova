@@ -816,11 +816,11 @@ checkExport12('B then A', 'controversies', 'consensus');
 checkExport12('B then A', 'consensus', 'controversies');
 
 // MR -- model registry refresh (2026-10-08). Defaults mirror providers.go.
-const MR_DEFAULTS = { anthropic: 'claude-haiku-5-5', openai: 'gpt-6-luna', deepseek: 'deepseek-flash', xai: 'grok-4.7' };
+const MR_DEFAULTS = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-6.2-sol', deepseek: 'deepseek-flash', xai: 'grok-4.7' };
 Object.entries(MR_DEFAULTS).forEach(([p, m]) =>
   check(`MR providerDefaults.${p} matches the Go default`, ctx(`providerDefaults[${JSON.stringify(p)}]`), m));
 check('MR modelChoices(anthropic) ids', ctx(`modelChoices('anthropic').map(c => c.id)`),
-  ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5']);
+  ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5']);
 check('MR modelChoices(gemini) includes gemini-3.8-flash', ctx(`modelChoices('gemini').map(c => c.id).includes('gemini-3.8-flash')`), true);
 check('MR modelChoices(openai) length', ctx(`modelChoices('openai').length`), 3);
 check('MR modelChoices(deepseek) ids', ctx(`modelChoices('deepseek').map(c => c.id)`),
