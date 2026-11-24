@@ -3,7 +3,7 @@
 // WHAT IS CACHED: the child CLI's raw JSON output for one (endpoint, limit,
 // claims) triple. That payload is an OpenAlex search result plus this engine's
 // heuristic scoring, and it depends on nothing else — the child CLI is always
-// keyless (buildChildEnv strips every provider key), so the value is identical
+// keyless (buildChildEnv passes only an allowlist, no key), so the value is identical
 // for every caller.
 //
 // WHAT IS NEVER CACHED: BYOK keys, the LLM synthesis computed from them, and
