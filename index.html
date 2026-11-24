@@ -319,6 +319,15 @@
     .study-chip.stance-supporting { color: #22c55e; border-color: rgba(34, 197, 94, 0.4); }
     .study-chip.stance-refuting { color: #ef4444; border-color: rgba(239, 68, 68, 0.4); }
     .study-chip.stance-neutral { color: #999; }
+    /* AI per-study stance (llm_synthesis.study_stances): same colours as the
+       heuristic chips, amber for mixed; the reason line uses the #848484 grey
+       that passes contrast on both card backgrounds. */
+    .study-chip.ai-stance-mixed { color: #f59e0b; border-color: rgba(245, 158, 11, 0.4); }
+    .ai-stance-reason {
+      font-size: 0.8rem;
+      color: #848484;
+      margin-top: 0.4rem;
+    }
     .study-link {
       display: inline-block;
       margin-top: 0.5rem;
@@ -2437,6 +2446,8 @@
     // Flatten one CLI study object into an export row. group records which
     // column the study was rendered in; claim is set on compare exports only.
     function studyRow(w, group, claim) {
+      const ai = group === 'excluded' ? null
+        : findAIStance(w, claim !== undefined ? splitClaimLabel(claim).side : '');
       const row = {
         title: cleanTitle(w.title),
         // authors arrives from the CLI as a string array. Joined with "; "
@@ -2456,6 +2467,11 @@
         // float noise such as 0.8999999999999999; non-numbers pass through.
         stance_confidence: Number.isFinite(w.stance_confidence) ? Number(w.stance_confidence.toFixed(2))
           : (w.stance_confidence != null ? w.stance_confidence : ''),
+        // The AI's own per-study stance and its short reason, next to the
+        // heuristic one. Empty strings (never undefined) when the AI did not
+        // run or did not judge this study; excluded rows never carry one.
+        ai_stance: ai ? ai.stance : '',
+        ai_stance_reason: ai ? ai.reason : '',
         // Empty string, not undefined: a missing column in one row would shift
         // the CSV header alignment for every other row.
         retraction: w.retraction || '',
@@ -2597,6 +2613,7 @@
         if (data === null) throw new Error('The server returned a response that could not be read.');
         const result = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
         aiExcluded = buildExcludedIndex(data.llm_synthesis);
+        aiStances = buildStanceIndex(data.llm_synthesis);
         lastQueries[endpoint] = endpoint === 'compare' ? `${body.claim1} vs ${body.claim2}` : body.claim;
         // gaps/evidence never get an LLM synthesis (the server skips it — their
         // CLI output is summary-only), so show a short note in its place.
@@ -2816,6 +2833,35 @@
     // so study cards can be visually flagged when the LLM filtered them out.
     let aiExcluded = [];
 
+    // AI per-study stance index: rebuilt per query from
+    // llm_synthesis.study_stances (one entry per study the AI kept).
+    let aiStances = [];
+
+    function buildStanceIndex(synthesis) {
+      const list = synthesis && Array.isArray(synthesis.study_stances) ? synthesis.study_stances : [];
+      return list.filter(s => s && s.title).map(s => ({
+        key: normTitle(s.title),
+        doi: normDoi(s.doi).toLowerCase(),
+        claim: s.claim === 'A' || s.claim === 'B' ? s.claim : '',
+        stance: String(s.stance || ''),
+        reason: String(s.reason || '')
+      }));
+    }
+
+    // findAIStance: DOI match first, else the same conservative title match
+    // the Excluded section uses. side ('A'/'B') narrows a compare to one
+    // claim. When the matches disagree (one study judged differently under
+    // the two claims, side unknown) it returns null: no chip beats a guess.
+    function findAIStance(w, side) {
+      if (!w || !aiStances.length) return null;
+      const doi = normDoi(w.doi).toLowerCase();
+      const key = normTitle(w.title);
+      let hits = aiStances.filter(s => (doi && s.doi === doi) || (key && titleMatches(key, s.key)));
+      if (side) hits = hits.filter(s => !s.claim || s.claim === side);
+      if (!hits.length) return null;
+      return hits.every(h => h.stance === hits[0].stance) ? hits[0] : null;
+    }
+
     function buildExcludedIndex(synthesis) {
       const list = synthesis && Array.isArray(synthesis.excluded_studies) ? synthesis.excluded_studies : [];
       return list.map(e => ({ key: normTitle(e.title), title: e.title || '', reason: e.reason || '' }));
@@ -2855,7 +2901,7 @@
     // Excluded section (🚫 chip + the LLM's reason, red border accent — no
     // strikethrough: the section itself already labels the cards as excluded).
     // Main-column cards are always kept studies, so ex is null there.
-    function renderStudyCard(w, ex) {
+    function renderStudyCard(w, ex, ai) {
       const stance = String(w.stance || '');
       const stanceClass = stance === 'supporting' ? 'stance-supporting'
         : stance === 'refuting' ? 'stance-refuting' : 'stance-neutral';
@@ -2876,12 +2922,24 @@
       if (w.design) chips += `<span class="study-chip">${esc(w.design)}</span>`;
       if (stance) chips += `<span class="study-chip ${stanceClass}">${esc(stance)}</span>`;
       if (w.stance_confidence != null) chips += `<span class="study-chip">confidence ${fx(w.stance_confidence)}</span>`;
+      // ai: the AI's own stance for this study (findAIStance), passed in by
+      // the caller so this function stays pure. Never on an excluded card.
+      const aiStance = !ex && ai ? String(ai.stance || '') : '';
+      if (aiStance) {
+        const aiClass = aiStance === 'supports' ? 'stance-supporting'
+          : aiStance === 'refutes' ? 'stance-refuting'
+          : aiStance === 'mixed' ? 'ai-stance-mixed' : 'stance-neutral';
+        chips += `<span class="study-chip ai-stance-chip ${aiClass}" title="The AI's stance, judged from this study's abstract; the chip before it is the tool's keyword heuristic.">🤖 AI: ${esc(aiStance)}</span>`;
+      }
       // The CLI caps abstracts at 1500 characters and sets abstract_truncated
       // when it cut one. The page never shows abstracts, only the exports do,
       // so this chip is the one place a reader learns the exported text is
       // shortened. Strict === true: older CLI builds omit the field and must
       // not claim anything either way.
       if (w.abstract_truncated === true) chips += `<span class="study-chip" title="The abstract was cut at 1500 characters; the export holds the shortened text.">abstract shortened</span>`;
+      const aiReason = aiStance && ai.reason
+        ? `<div class="ai-stance-reason">🤖 ${esc(ai.reason)}</div>`
+        : '';
       const reason = ex && ex.reason
         ? `<div class="ai-excluded-reason">🚫 ${esc(ex.reason)}</div>`
         : '';
@@ -2898,6 +2956,7 @@
           <div class="study-title">${esc(w.title)}</div>
           <div class="study-meta">${chips}</div>
           ${retrNote}
+          ${aiReason}
           ${reason}
           ${link}
         </div>`;
@@ -2907,7 +2966,7 @@
     // endpoint response carries per-study arrays. AI-excluded studies are NOT
     // rendered here (PRISMA-style clean columns) — they are pushed into
     // excludedSink as { work, ex } for the collapsible Excluded section below.
-    function renderStudyGroups(supporting, refuting, excludedSink) {
+    function renderStudyGroups(supporting, refuting, excludedSink, side) {
       const group = (label, arr) => {
         const kept = [];
         let excludedCount = 0;
@@ -2924,7 +2983,7 @@
         }
         let s = `<div class="study-group-title">${label}</div>`;
         if (kept.length) {
-          s += kept.map(w => renderStudyCard(w, null)).join('');
+          s += kept.map(w => renderStudyCard(w, null, findAIStance(w, side || ''))).join('');
         } else {
           const hint = excludedCount ? ` (${excludedCount} excluded — see below)` : '';
           s += `<div class="study-empty">No studies in this group${hint}</div>`;
@@ -2991,9 +3050,9 @@
       const cards = tags
         ? [...new Set(tags.filter(Boolean))].map(label =>
             `<div class="all-studies-claim-subhead">${esc(label)}</div>` +
-            works.filter((w, i) => tags[i] === label).map(w => renderStudyCard(w, null)).join('')
+            works.filter((w, i) => tags[i] === label).map(w => renderStudyCard(w, null, findAIStance(w, splitClaimLabel(label).side))).join('')
           ).join('')
-        : works.map(w => renderStudyCard(w, null)).join('');
+        : works.map(w => renderStudyCard(w, null, findAIStance(w, ''))).join('');
       const body = metaRow(plural(works.length, 'analyzed study', 'analyzed studies') +
           ' · the full list the score was computed from', key, filename) +
         cards;
@@ -3215,7 +3274,7 @@
         const scope = data && data.llm_scope;
         const scoped = filterRan(stanceSource) && scope && scope.mode === 'compare';
         const card = (x, sink, fallbackLabel, scopeNote) => {
-          const groups = renderStudyGroups(x.top_supporting, x.top_refuting, sink);
+          const groups = renderStudyGroups(x.top_supporting, x.top_refuting, sink, fallbackLabel === 'Claim B' ? 'B' : 'A');
           const rows = keptRows(x.top_supporting, x.top_refuting, sink, `${fallbackLabel}: ${x.claim || ''}`);
           studyRowsAll.push(...rows);
           return `
