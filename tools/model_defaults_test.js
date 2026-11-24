@@ -62,7 +62,7 @@ for (const [name, ids] of Object.entries(choices)) {
   check("2 " + name + " first suggestion '" + ids[0] + "' is the default '" + serverDefaults[name] + "'", ids[0] === serverDefaults[name]);
 }
 
-const wantGemini = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash"];
+const wantGemini = ["gemini-3.5-flash-lite", "gemini-4-hydrogen", "gemini-3.8-flash", "gemini-3.6-flash"];
 check("3 gemini list is " + wantGemini.join(", ") + " (found " + (choices.gemini || []).join(", ") + ")",
   JSON.stringify(choices.gemini) === JSON.stringify(wantGemini));
 
