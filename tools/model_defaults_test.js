@@ -62,11 +62,14 @@ for (const [name, ids] of Object.entries(choices)) {
   check("2 " + name + " first suggestion '" + ids[0] + "' is the default '" + serverDefaults[name] + "'", ids[0] === serverDefaults[name]);
 }
 
-const wantGemini = ["gemini-3.5-flash-lite", "gemini-4-hydrogen", "gemini-3.8-flash", "gemini-3.6-flash"];
+const wantGemini = ["gemini-4-hydrogen", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash"];
 check("3 gemini list is " + wantGemini.join(", ") + " (found " + (choices.gemini || []).join(", ") + ")",
   JSON.stringify(choices.gemini) === JSON.stringify(wantGemini));
 
-const wantOpenAI = ["gpt-6-luna", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6.2-astra"];
+const wantOpenAI = ["gpt-6.2-sol", "gpt-6-luna", "gpt-6.2-astra", "gpt-6.1-terra"];
+const wantAnthropic = ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"];
+check("5 anthropic list is " + wantAnthropic.join(", ") + " (found " + (choices.anthropic || []).join(", ") + ")",
+  JSON.stringify(choices.anthropic) === JSON.stringify(wantAnthropic));
 check("4 openai list is " + wantOpenAI.join(", ") + " (found " + (choices.openai || []).join(", ") + ")",
   JSON.stringify(choices.openai) === JSON.stringify(wantOpenAI));
 

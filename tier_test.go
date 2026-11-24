@@ -120,7 +120,7 @@ func TestResolveModel(t *testing.T) {
 		want     string
 	}{
 		{"override wins", "anthropic", "claude-sonnet-4-6", "claude-sonnet-4-6"},
-		{"empty falls back to the provider default", "anthropic", "", "claude-haiku-5-5"},
+		{"empty falls back to the provider default", "anthropic", "", "claude-sonnet-5-5"},
 		{"deepseek default", "deepseek", "", "deepseek-flash"},
 		{"unknown provider has no default", "nope", "", ""},
 		{"no provider at all", "", "", ""},

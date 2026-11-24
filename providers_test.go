@@ -224,9 +224,12 @@ func TestSynthesisPromptUsesCompactedJSON(t *testing.T) {
 // deprecated and rerouted. index.html lists flash-lite first in its datalist
 // notes, and an empty model field falls through to this default, so a silent
 // move here would make the UI recommend one model and run another.
+// 2026-11-24 (Laci's decision): gemini-4-hydrogen answered 10 of 10 minimal
+// requests and judged the IMT/COPD study stances right, while flash-lite made
+// two stance errors, so hydrogen is now the default and listed first.
 // Re-measure before changing it.
 func TestGeminiDefaultModelIsTheMeasuredWorkingOne(t *testing.T) {
-	const want = "gemini-3.5-flash-lite"
+	const want = "gemini-4-hydrogen"
 	if got := providers["gemini"].DefaultModel; got != want {
 		t.Errorf("providers[gemini].DefaultModel = %q, want %q", got, want)
 	}
@@ -335,8 +338,8 @@ func TestHandlerLLMScopeOnlyOnLLMPath(t *testing.T) {
 // export_wysiwyg_test.mjs assert the same four values).
 func TestModelRegistryDefaults(t *testing.T) {
 	want := map[string]string{
-		"anthropic": "claude-haiku-5-5",
-		"openai":    "gpt-6-luna",
+		"anthropic": "claude-sonnet-5-5",
+		"openai":    "gpt-6.2-sol",
 		"deepseek":  "deepseek-flash",
 		"xai":       "grok-4.7",
 	}

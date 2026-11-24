@@ -1511,9 +1511,9 @@
     // and shown as a hint. Users can override with any model id (openrouter
     // effectively requires one, since it routes to any hosted model).
     const providerDefaults = {
-      anthropic: 'claude-haiku-5-5',
-      openai: 'gpt-6-luna',
-      gemini: 'gemini-3.5-flash-lite',
+      anthropic: 'claude-sonnet-5-5',
+      openai: 'gpt-6.2-sol',
+      gemini: 'gemini-4-hydrogen',
       groq: 'llama-3.3-70b-versatile',
       mistral: 'mistral-small-latest',
       deepseek: 'deepseek-flash',
@@ -1535,21 +1535,23 @@
     // A provider absent from this map falls back to its single default above.
     const providerModelChoices = {
       anthropic: [
-        { id: 'claude-haiku-5-5', note: 'faster, cheaper' },
-        { id: 'claude-sonnet-5-5', note: 'more thorough, higher cost' },
-        { id: 'claude-opus-5-5', note: 'most capable, highest cost' }
+        { id: 'claude-sonnet-5-5', note: '7 of 8 study stances right (measured 2026-11-24)' },
+        { id: 'claude-haiku-5-5', note: 'cheaper; 6 of 8, merged two titles (measured 2026-11-24)' },
+        { id: 'claude-opus-5-5', note: '8 of 8, highest cost (measured 2026-11-24)' }
       ],
       openai: [
-        { id: 'gpt-6-luna', note: 'cheapest, high volume' },
-        { id: 'gpt-6.2-sol', note: 'balanced, newest Sol' },
-        { id: 'gpt-6.1-terra', note: 'production tier, mid cost' },
-        { id: 'gpt-6.2-astra', note: 'most capable, highest cost' }
+        { id: 'gpt-6.2-sol', note: '8 of 8 study stances right (measured 2026-11-24)' },
+        { id: 'gpt-6-luna', note: 'cheapest; 8 of 8 (measured 2026-11-24)' },
+        { id: 'gpt-6.2-astra', note: '8 of 8, highest cost (measured 2026-11-24)' },
+        { id: 'gpt-6.1-terra', note: 'not measured' }
       ],
       deepseek: [
-        { id: 'deepseek-flash', note: 'fast + cheap (V4.1 Flash)' },
-        { id: 'deepseek-v4-pro', note: 'more thorough (V4 Pro)' }
+        { id: 'deepseek-flash', note: '6 of 8 study stances right (measured 2026-11-24)' },
+        { id: 'deepseek-v4-pro', note: '5 of 8; synthesis misread a meta-analysis (measured 2026-11-24)' }
       ],
-      // GEMINI ORDER AND NOTES — measured, not marketing copy. Re-measured
+      // MODEL ORDER AND NOTES (all providers) — measured 2026-11-24 on one claim
+      // (IMT/COPD, 8 key studies judged against their abstracts); the first id
+      // is the server default. GEMINI ORDER AND NOTES — measured, not marketing copy. Re-measured
       // 2026-11-23 with minimal JSON requests on the OpenAI-compat endpoint:
       // 3.5-flash-lite answered 6 of 8, 3.8-flash 2 of 8, 3.6-flash 1 of 3,
       // 3.5-flash 0 of 3, gemini-4-hydrogen 0 of 15; every miss was HTTP 503
@@ -1562,8 +1564,8 @@
       // is one provider's capacity on one day, and restored throughput would
       // make these lines stale rather than wrong.
       gemini: [
-        { id: 'gemini-3.5-flash-lite', note: 'answered 6 of 8 (measured 2026-11-23)' },
-        { id: 'gemini-4-hydrogen', note: 'answered 10 of 10 (measured 2026-11-24; was 0 of 15 the day before)' },
+        { id: 'gemini-4-hydrogen', note: 'answered 10 of 10; study stances right (measured 2026-11-24; 0 of 15 on 11-23)' },
+        { id: 'gemini-3.5-flash-lite', note: 'answered 6 of 8 (11-23); 2 stance errors (measured 2026-11-24)' },
         { id: 'gemini-3.8-flash', note: 'often overloaded: 2 of 8 (measured 2026-11-23)' },
         { id: 'gemini-3.6-flash', note: 'often overloaded: 1 of 3 (measured 2026-11-23)' }
       ]
