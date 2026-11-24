@@ -148,6 +148,25 @@ type excludedStudy struct {
 	DOI    string `json:"doi,omitempty"`
 }
 
+// studyStance is the model's per-study verdict for one study it KEPT, judged
+// from that study's own abstract against the claim. It sits next to the CLI's
+// heuristic stance and never replaces it: the heuristic stays the reproducible
+// score, this is a second opinion the user can compare row by row. Measured
+// reason for it (Laci's 2026-10-16 SciFact run): heuristic 14/37 correct with
+// 0/12 refuting right, LLM 32/37. Claim is "A" or "B" on a comparison (which
+// claim's list the study was judged under) and empty otherwise.
+type studyStance struct {
+	Title  string `json:"title"`
+	DOI    string `json:"doi,omitempty"`
+	Claim  string `json:"claim,omitempty"`
+	Stance string `json:"stance"` // supports | refutes | mixed | unclear
+	Reason string `json:"reason,omitempty"`
+}
+
+// maxStudyStances caps the list like the other model-filled lists: the prompt
+// sends at most maxStudiesForLLM studies per claim, two claims on a compare.
+const maxStudyStances = 60
+
 // keyEvidencePoint is one key_evidence entry: the short point the model wrote,
 // plus the DOI of the study that point cites when it cites a single study. DOI
 // is empty for a point that draws on several studies or none, and for every
@@ -233,6 +252,9 @@ type llmSynthesis struct {
 	Reasoning       string          `json:"reasoning"`
 	KeyEvidence     keyEvidenceList `json:"key_evidence"`
 	ExcludedStudies []excludedStudy `json:"excluded_studies"`
+	// StudyStances is one entry per kept study; see studyStance. Omitted when
+	// the model returned none, so older clients see the same payload as before.
+	StudyStances []studyStance `json:"study_stances,omitempty"`
 	// Contradictions names the studies the model filed under excluded_studies
 	// and then cited in key_evidence anyway. It is a report, never a repair:
 	// both lists still reach the client exactly as the model returned them and
@@ -455,13 +477,21 @@ func synthesisPrompt(endpoint string, claims []string, cliJSON []byte) string {
 		"5. If too few genuinely relevant studies remain, say so and use stance \"insufficient\".\n" +
 		"6. When the tool output contains TWO claims (a comparison with claim_a and claim_b), apply steps 1-4 EQUALLY and INDEPENDENTLY to BOTH claims' study lists: examine every study under each claim with the same rigor, and put the studies you exclude from EITHER claim together into the single flat excluded_studies array. Do not neglect the second claim's studies.\n\n" +
 		"Respond with ONLY a JSON object, no markdown fences, with exactly these fields:\n" +
-		`{"stance":"supports|refutes|mixed|insufficient","confidence":0.0,"reasoning":"2-4 sentence synthesis based only on the studies you kept","key_evidence":[{"point":"short point referencing specific numbers or studies you kept","doi":"DOI of the study this point cites, copied from the tool output, or empty string if the point cites no single study"}],"excluded_studies":[{"title":"study title copied from the tool output","doi":"DOI of the study, copied from the tool output, empty string when the tool output has none","reason":"short reason, e.g. off-topic: about X not the claim / animal model only / in-vitro only / different substance"}]}` + "\n" +
+		`{"stance":"supports|refutes|mixed|insufficient","confidence":0.0,"reasoning":"2-4 sentence synthesis based only on the studies you kept","key_evidence":[{"point":"short point referencing specific numbers or studies you kept","doi":"DOI of the study this point cites, copied from the tool output, or empty string if the point cites no single study"}],"excluded_studies":[{"title":"study title copied from the tool output","doi":"DOI of the study, copied from the tool output, empty string when the tool output has none","reason":"short reason, e.g. off-topic: about X not the claim / animal model only / in-vitro only / different substance"}],"study_stances":[{"title":"study title copied from the tool output","doi":"DOI copied from the tool output, or empty string","claim":"A or B for a comparison (the claim whose list the study is under), empty string otherwise","stance":"supports|refutes|mixed|unclear","reason":"at most 12 words: what this study's abstract reports about the claim's outcome"}]}` + "\n" +
+		"study_stances: give ONE entry for EVERY study you kept (every study not in excluded_studies), judged ONLY from that study's own abstract against the claim — not from its title, not from the tool's \"stance\" field, and not from your overall verdict. Use \"refutes\" when the abstract's result contradicts the claim (for a claim that X improves, reduces or causes Y, a reported null or non-significant result on Y contradicts it), \"mixed\" when it reports results both ways, and \"unclear\" when the abstract is empty or does not report the claim's outcome. Never list an excluded study in study_stances.\n" +
 		"Give 3-5 key_evidence entries. stance is your overall verdict on claim 1 (for comparisons, weigh both claims and explain in reasoning). confidence is 0-1. Leave excluded_studies as [] only if every study is genuinely relevant. " +
 		"Never attribute an outcome to a study that its abstract does not report measuring. " +
 		"excluded_studies must contain ONLY studies you actually discarded and did NOT use for your stance, confidence, or key_evidence; a study you cite as evidence must never appear there, and lower evidence tier is never by itself a reason to exclude. " +
 		"If you want to note a study's limitations while still using it, put that in reasoning, not in excluded_studies.")
 	return b.String()
 }
+
+// anthropicMaxTokens is the Anthropic output ceiling. 1024 once truncated the
+// verbose models mid-object; 4096 held the verdict alone. study_stances adds
+// one short entry per kept study (up to 25, or 2 x ~12 on a compare), so the
+// ceiling is 8192. It is a ceiling, not a target: a short answer costs only
+// what it uses.
+const anthropicMaxTokens = 8192
 
 // openAIRequest / anthropicRequest are the minimal wire shapes. Temperature is
 // sent only to the providers in deterministicProviders — some others reject
@@ -569,7 +599,7 @@ func llmSynthesize(ctx context.Context, provider, key, model, endpoint string, c
 		if !anthropicSupportsTemperature(model) {
 			anthropicTemp = nil
 		}
-		areq := anthropicRequest{Model: model, MaxTokens: 4096, Temperature: anthropicTemp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
+		areq := anthropicRequest{Model: model, MaxTokens: anthropicMaxTokens, Temperature: anthropicTemp, Messages: []chatMessage{{Role: "user", Content: prompt}}}
 		if anthropicDisableThinking(model) {
 			areq.Thinking = &anthropicThinking{Type: "disabled"}
 		}
@@ -831,11 +861,58 @@ func parseSynthesis(text string) (*llmSynthesis, error) {
 		}
 	}
 	syn.ExcludedStudies = cleaned
+	syn.StudyStances = cleanStudyStances(syn.StudyStances)
 	// Report, do not repair. This runs on the cleaned list — an entry the
 	// keptAnyway filter already removed is no longer an exclusion, so it is no
 	// longer a contradiction either — and it changes nothing else.
 	syn.Contradictions = findContradictions(&syn)
 	return &syn, nil
+}
+
+// cleanStudyStances normalizes the model's per-study list the same way the
+// excluded list is normalized: trim, drop entries without a title, map any
+// stance outside the four allowed words to "unclear" (never guess a side),
+// keep claim only as "A"/"B", cut long fields, cap the count.
+func cleanStudyStances(in []studyStance) []studyStance {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]studyStance, 0, len(in))
+	for _, s := range in {
+		t := strings.TrimSpace(s.Title)
+		if t == "" {
+			continue
+		}
+		st := strings.ToLower(strings.TrimSpace(s.Stance))
+		switch st {
+		case "supports", "refutes", "mixed", "unclear":
+		default:
+			st = "unclear"
+		}
+		c := strings.ToUpper(strings.TrimSpace(s.Claim))
+		if c != "A" && c != "B" {
+			c = ""
+		}
+		r := strings.TrimSpace(s.Reason)
+		d := strings.TrimSpace(s.DOI)
+		if len(t) > 300 {
+			t = t[:300]
+		}
+		if len(r) > 200 {
+			r = r[:200]
+		}
+		if len(d) > 200 {
+			d = d[:200]
+		}
+		out = append(out, studyStance{Title: t, DOI: d, Claim: c, Stance: st, Reason: r})
+		if len(out) >= maxStudyStances {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // maxContradictions caps the reported list in line with the existing caps on

@@ -50,7 +50,7 @@ function check(label, ok, detail) {
 // Present before and after the change: a missing one means the scan broke.
 const required = ["cleanTitle", "studyRow", "keptRows", "normTitle", "titleMatches", "excludedRows",
   "comparePool", "renderAllStudiesSection", "plural", "keyWords", "asciiSlug", "hash3", "uniqueKey",
-  "bibEsc", "queryFor", "analysisBibTeX", "fx", "boolCell", "toCSV", "normDoi", "bibKey"];
+  "bibEsc", "queryFor", "analysisBibTeX", "fx", "boolCell", "toCSV", "normDoi", "bibKey", "findAIStance"];
 // Added by the change: missing ones are reported as FAIL checks (RED), not a crash.
 const added = ["splitClaimLabel"];
 const srcs = [];
@@ -81,7 +81,7 @@ for (const name of added) {
   required.push("toBibTeX");
 }
 const ctx = vm.createContext({
-  lastData: {}, lastQueries: { consensus: "c", compare: "c" }, aiExcluded: [],
+  lastData: {}, lastQueries: { consensus: "c", compare: "c" }, aiExcluded: [], aiStances: [],
   ANALYSIS_LABEL: {}, ANALYSIS_SLUG: {}, KEY_STOPWORDS: new Set(),
   window: { location: { origin: "http://localhost" } },
   esc: s => String(s == null ? "" : s), metaRow: () => "", renderStudyCard: () => ""
