@@ -1544,13 +1544,17 @@
       // 2026-11-23 with minimal JSON requests on the OpenAI-compat endpoint:
       // 3.5-flash-lite answered 6 of 8, 3.8-flash 2 of 8, 3.6-flash 1 of 3,
       // 3.5-flash 0 of 3, gemini-4-hydrogen 0 of 15; every miss was HTTP 503
-      // "high demand". 3.5-flash and 3.7-flash are deprecated and rerouted by
+      // "high demand". Re-measured 2026-11-24 (10 minimal requests,
+      // reasoning_effort "low"): gemini-4-hydrogen answered 10 of 10, no 503,
+      // so it is offered second; it is a suggestion only, the default stays
+      // flash-lite. 3.5-flash and 3.7-flash are deprecated and rerouted by
       // Google, so they are no longer offered. A note that contradicts the
       // measurement is worse than no note. RE-MEASURE before reordering: this
       // is one provider's capacity on one day, and restored throughput would
       // make these lines stale rather than wrong.
       gemini: [
         { id: 'gemini-3.5-flash-lite', note: 'answered 6 of 8 (measured 2026-11-23)' },
+        { id: 'gemini-4-hydrogen', note: 'answered 10 of 10 (measured 2026-11-24; was 0 of 15 the day before)' },
         { id: 'gemini-3.8-flash', note: 'often overloaded: 2 of 8 (measured 2026-11-23)' },
         { id: 'gemini-3.6-flash', note: 'often overloaded: 1 of 3 (measured 2026-11-23)' }
       ]
