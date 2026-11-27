@@ -45,6 +45,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // cliBinary is the compiled scientific-consensus CLI this server shells out to.
@@ -897,6 +898,22 @@ type claimRequest struct {
 // handleClaimCmd is the shared handler for every subcommand whose CLI shape is
 // "<subcommand> <claim> --json --limit <n>". defLimit is that subcommand's CLI
 // default, used when the caller omits or over-ranges limit.
+// maxClaimRunes caps a claim, counted in characters after normalizeClaim. The
+// claim is passed to the CLI as one argv element (Linux exec fails at 128 KiB,
+// which surfaced as a 502 leaking the binary path) and goes in full into the
+// LLM prompt, so an unbounded claim also costs LLM tokens.
+const maxClaimRunes = 500
+
+// claimTooLong returns a client-facing error when claim exceeds maxClaimRunes,
+// or "" when it is within the limit. name is the request field ("claim",
+// "claim1", "claim2").
+func claimTooLong(name, claim string) string {
+	if utf8.RuneCountInString(claim) > maxClaimRunes {
+		return fmt.Sprintf("%s is too long (max %d characters)", name, maxClaimRunes)
+	}
+	return ""
+}
+
 func handleClaimCmd(w http.ResponseWriter, r *http.Request, subcommand string, defLimit int) {
 	setCORS(w)
 	if preflight(w, r) {
@@ -914,6 +931,10 @@ func handleClaimCmd(w http.ResponseWriter, r *http.Request, subcommand string, d
 	req.Claim = normalizeClaim(req.Claim)
 	if req.Claim == "" {
 		writeError(w, http.StatusBadRequest, "claim is required")
+		return
+	}
+	if msg := claimTooLong("claim", req.Claim); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 	b, ok := extractBYOK(w, r, req.Provider, req.Model)
@@ -967,6 +988,12 @@ func handleCompare(w http.ResponseWriter, r *http.Request) {
 	if req.Claim1 == "" || req.Claim2 == "" {
 		writeError(w, http.StatusBadRequest, "both claim1 and claim2 are required")
 		return
+	}
+	for _, c := range []struct{ name, claim string }{{"claim1", req.Claim1}, {"claim2", req.Claim2}} {
+		if msg := claimTooLong(c.name, c.claim); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
 	}
 	b, ok := extractBYOK(w, r, req.Provider, req.Model)
 	if !ok {
