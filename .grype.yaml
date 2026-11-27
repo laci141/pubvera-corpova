@@ -1,0 +1,11 @@
+# grype ignore rules. Each rule needs a reason and a review date.
+ignore:
+  # False positive: the fix commit a54c578 is an ancestor of the pinned
+  # excelize commit 22f76f9 and of tag v2.11.1, but grype ranks the
+  # pre-release pseudo-version below 2.11.1. The version pin makes this rule
+  # stop matching as soon as the CLI moves to another excelize version.
+  # Review by 2027-02-28.
+  - vulnerability: GHSA-fq3v-74gv-27gm
+    package:
+      name: github.com/xuri/excelize/v2
+      version: v2.11.1-0.20260915055537-22f76f9acb94
