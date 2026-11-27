@@ -6,7 +6,7 @@
 // repo, so every action is pinned to a full commit SHA with the exact version
 // in a trailing comment. This static check reads .github/workflows/deploy.yml
 // and asserts:
-//   (a) there are exactly 9 "uses:" lines;
+//   (a) there are exactly 10 "uses:" lines;
 //   (b) every "uses:" line ends in "@<40 hex> # v<major>.<minor>.<patch>";
 //   (c) no "uses:" line pins a bare tag ("@v<digits>") instead of a SHA;
 //   (d) all 7 pinned actions are present;
@@ -31,7 +31,7 @@ if (uses.length === 0) {
   process.exit(1);
 }
 
-check("(a) exactly 9 uses: lines (found " + uses.length + ")", uses.length === 9);
+check("(a) exactly 10 uses: lines (found " + uses.length + ")", uses.length === 10);
 
 const pinned = /^(-\s+)?uses:\s+[\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/;
 for (const l of uses) {
@@ -46,6 +46,7 @@ const actions = [
   "actions/download-artifact",
   "actions/setup-go",
   "actions/upload-artifact",
+  "anchore/scan-action",
   "docker/build-push-action",
   "docker/login-action",
   "docker/setup-buildx-action",
