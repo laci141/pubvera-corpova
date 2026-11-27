@@ -1055,6 +1055,10 @@
     .pyramid-table.pyramid-table { width: 100%; font-size: 0.9rem; }
     .pyramid-example.pyramid-example { font-size: 0.85rem; opacity: 0.85; }
     .pyramid-note.pyramid-note { margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.75; }
+    /* Live "N / 500" counter under each claim textarea; amber from 450, red over 500. */
+    .claim-counter { margin-top: 0.25rem; font-size: 0.8rem; color: #848484; text-align: right; }
+    .claim-counter.is-warn { color: #fbbf24; }
+    .claim-counter.is-over { color: #ef4444; }
     /* Keyboard focus ring for the role=button bento cards. */
     .bento-card:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
     /* Reduced motion: no entrance animations, hover lifts or smooth scroll.
@@ -1144,6 +1148,7 @@
       <div id="consensusForm" class="form-group">
         <label>Claim</label>
         <textarea id="consensusClaim" maxlength="500" placeholder="Enter your claim..." class="u-h-80"></textarea>
+        <div class="claim-counter" data-for="consensusClaim" aria-live="polite"></div>
         <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="consensusKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="consensusKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
@@ -1212,6 +1217,7 @@
       <div id="evidenceForm" class="form-group">
         <label>Claim</label>
         <textarea id="evidenceClaim" maxlength="500" placeholder="Enter your claim..." class="u-h-80"></textarea>
+        <div class="claim-counter" data-for="evidenceClaim" aria-live="polite"></div>
         <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="evidenceKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="evidenceKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
@@ -1280,8 +1286,10 @@
       <div id="compareForm" class="form-group">
         <label>Claim 1</label>
         <textarea id="compareClaim1" maxlength="500" placeholder="Enter first claim..." class="u-h-70"></textarea>
+        <div class="claim-counter" data-for="compareClaim1" aria-live="polite"></div>
         <label class="u-mt-1">Claim 2</label>
         <textarea id="compareClaim2" maxlength="500" placeholder="Enter second claim..." class="u-h-70"></textarea>
+        <div class="claim-counter" data-for="compareClaim2" aria-live="polite"></div>
         <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="compareKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="compareKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
@@ -1350,6 +1358,7 @@
       <div id="gapsForm" class="form-group">
         <label>Claim</label>
         <textarea id="gapsClaim" maxlength="500" placeholder="Enter your claim..." class="u-h-80"></textarea>
+        <div class="claim-counter" data-for="gapsClaim" aria-live="polite"></div>
         <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="gapsKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="gapsKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
@@ -1418,6 +1427,7 @@
       <div id="controversiesForm" class="form-group">
         <label>Claim</label>
         <textarea id="controversiesClaim" maxlength="500" placeholder="Enter your claim..." class="u-h-80"></textarea>
+        <div class="claim-counter" data-for="controversiesClaim" aria-live="polite"></div>
         <label class="u-mt-1">LLM Key (optional)</label>
         <input type="password" id="controversiesKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="controversiesKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
@@ -1731,6 +1741,29 @@
       });
     });
 
+    // Live character counter under each claim textarea. The server rejects
+    // claims over CLAIM_MAX characters (main.go maxClaimRunes); [...value]
+    // counts characters like the server does, not UTF-16 units.
+    const CLAIM_MAX = 500;
+    const CLAIM_WARN = 450;
+    function updateClaimCounters() {
+      document.querySelectorAll('.claim-counter').forEach(counter => {
+        const ta = document.getElementById(counter.dataset.for);
+        if (!ta) return;
+        const n = [...ta.value].length;
+        counter.textContent = `${n} / ${CLAIM_MAX}`;
+        counter.classList.toggle('is-warn', n >= CLAIM_WARN);
+        counter.classList.toggle('is-over', n > CLAIM_MAX);
+      });
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.claim-counter').forEach(counter => {
+        const ta = document.getElementById(counter.dataset.for);
+        if (ta) ta.addEventListener('input', updateClaimCounters);
+      });
+      updateClaimCounters();
+    });
+
     // Copy the hero claim into a freshly-opened modal's claim field for convenience.
     // modalOpener remembers what opened each modal so close can hand focus back.
     const modalOpener = {};
@@ -1742,6 +1775,7 @@
       if (hero && hero.value.trim()) {
         const target = document.getElementById(`${endpoint}Claim`) || document.getElementById(`${endpoint}Claim1`);
         if (target && !target.value.trim()) target.value = hero.value.trim();
+        updateClaimCounters();
       }
       modal.classList.add('active');
       const closeBtn = modal.querySelector('.close-btn');
