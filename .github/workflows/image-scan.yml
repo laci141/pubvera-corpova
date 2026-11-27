@@ -1,0 +1,47 @@
+name: Scan the live Corpova image
+
+# Scans the image Watchtower actually runs (ghcr.io :latest) with grype, so a
+# CVE published after the last build still shows up. A failed run emails the
+# user who last changed the cron line below. Public repositories disable
+# scheduled workflows after 60 days without repository activity; re-enable it
+# in the Actions tab if that happens.
+on:
+  schedule:
+    # 1st and 15th of each month, about every two weeks, 05:17 Romania winter time.
+    - cron: "17 3 1,15 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      # Checkout only so the scan finds .grype.yaml.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull the live image
+        run: docker pull ghcr.io/laci141/pubvera-corpova:latest
+
+      # Fails only on high or critical findings that have a fix; false
+      # positives go in .grype.yaml with a reason.
+      - name: Scan the image
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ghcr.io/laci141/pubvera-corpova:latest
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
