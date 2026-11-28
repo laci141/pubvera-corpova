@@ -2370,7 +2370,11 @@
       const papers = v.rows.filter(r => r && (r.title || r.display_name));
       // One key namespace per exported file.
       const used = new Set();
-      const text = '% ' + exportHeader(key, v.rows, v.scope) + '\n\n' +
+      // One comment line: the claim is typed into a textarea and can hold line
+      // breaks, and a second line would not start with "%", so BibTeX would read
+      // it as file content (even as an entry) instead of as part of the comment.
+      const header = exportHeader(key, v.rows, v.scope).replace(/\s+/g, ' ');
+      const text = '% ' + header + '\n\n' +
         (papers.length ? toBibTeX(papers, used) : analysisBibTeX(key, v.rows, used));
       triggerDownload(new Blob([text], { type: 'application/x-bibtex;charset=utf-8' }), filename);
     }
