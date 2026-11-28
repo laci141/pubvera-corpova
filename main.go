@@ -511,6 +511,33 @@ func clampLimit(limit, def int) int {
 	return limit
 }
 
+// claimArgs builds the CLI argv: subcommand, flags, then "--" and the claims.
+// The "--" ends flag parsing, so a claim that starts with "-" (for example
+// "-80C storage keeps samples stable" or "--help") is read as text, not as a
+// flag. Without it the CLI answered such a claim with its usage text or an
+// "unknown flag" error, which the server returned as a 502.
+func claimArgs(subcommand string, limit int, claims ...string) []string {
+	args := []string{subcommand, "--json", "--limit", fmt.Sprintf("%d", limit), "--"}
+	return append(args, claims...)
+}
+
+// withPacingArgs returns args with cliPacingArgs placed before the "--"
+// separator (flags after it would be read as claims). Without a separator they
+// are appended. args is not modified.
+func withPacingArgs(args []string) []string {
+	cut := len(args)
+	for i, a := range args {
+		if a == "--" {
+			cut = i
+			break
+		}
+	}
+	out := make([]string, 0, len(args)+len(cliPacingArgs))
+	out = append(out, args[:cut]...)
+	out = append(out, cliPacingArgs...)
+	return append(out, args[cut:]...)
+}
+
 // cliPacingArgs is appended to every CLI invocation. OpenAlex 429s shared
 // anonymous traffic aggressively; --rate-limit 0.15 (~9 req/min) keeps the CLI
 // under that limit instead of tripping its adaptive backoff (which waits 60s
@@ -818,7 +845,7 @@ func writeCLIError(w http.ResponseWriter, b byok, err error) {
 // runCLIOnce runs the child CLI exactly once and returns its validated JSON.
 // It is the only place a child process is spawned.
 func runCLIOnce(ctx context.Context, args []string) ([]byte, error) {
-	args = append(args, cliPacingArgs...)
+	args = withPacingArgs(args)
 
 	// #nosec G204 -- args are fixed subcommands/flags plus user text as discrete
 	// argv elements (no shell); the child env carries no keys at all.
@@ -943,7 +970,7 @@ func handleClaimCmd(w http.ResponseWriter, r *http.Request, subcommand string, d
 	}
 	limit := clampLimit(req.Limit, defLimit)
 	claims := []string{req.Claim}
-	args := []string{subcommand, req.Claim, "--json", "--limit", fmt.Sprintf("%d", limit)}
+	args := claimArgs(subcommand, limit, req.Claim)
 	runCLIJSON(w, r, b, subcommand, claims, args, cacheKey(subcommand, limit, claims))
 }
 
@@ -1001,7 +1028,7 @@ func handleCompare(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := clampLimit(req.Limit, 40)
 	claims := []string{req.Claim1, req.Claim2}
-	args := []string{"compare", req.Claim1, req.Claim2, "--json", "--limit", fmt.Sprintf("%d", limit)}
+	args := claimArgs("compare", limit, req.Claim1, req.Claim2)
 	runCLIJSON(w, r, b, "compare", claims, args, cacheKey("compare", limit, claims))
 }
 
