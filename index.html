@@ -1109,7 +1109,7 @@
     <h1>🧬 Corpova</h1>
     <p>Claim-level evidence analysis across the scientific literature — transparent filtering, dual scoring, keyless via OpenAlex.</p>
     <div class="claim-input-box">
-      <textarea id="heroClaimInput" placeholder="e.g., 'Vitamin D reduces respiratory infections'"></textarea>
+      <textarea id="heroClaimInput" aria-label="Claim to analyze" placeholder="e.g., 'Vitamin D reduces respiratory infections'"></textarea>
     </div>
   </section>
 
@@ -1146,15 +1146,15 @@
         <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="consensus">&times;</button>
       </div>
       <div id="consensusForm" class="form-group">
-        <label>Claim</label>
+        <label for="consensusClaim">Claim</label>
         <textarea id="consensusClaim" maxlength="500" placeholder="Enter your claim..." class="u-h-80"></textarea>
         <div class="claim-counter" data-for="consensusClaim" aria-live="polite"></div>
-        <label class="u-mt-1">LLM Key (optional)</label>
+        <label class="u-mt-1" for="consensusKey">LLM Key (optional)</label>
         <input type="password" id="consensusKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="consensusKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
         <button type="button" class="auth-btn u-mt-05" id="consensusKeyClear">Clear key</button>
-        <label class="u-mt-1">Provider</label>
+        <label class="u-mt-1" for="consensusProvider">Provider</label>
         <select id="consensusProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1174,11 +1174,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label class="u-mt-1">Model (optional)</label>
+        <label class="u-mt-1" for="consensusModel">Model (optional)</label>
         <input type="text" id="consensusModel" placeholder="provider default" autocomplete="off" list="consensusModelOptions">
         <datalist id="consensusModelOptions"></datalist>
         <div class="model-hint" id="consensusModelHint"></div>
-        <label class="u-mt-1">Limit (studies)</label>
+        <label class="u-mt-1" for="consensusLimit">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="consensusLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="consensusLimitMark"></span>
@@ -1215,15 +1215,15 @@
         <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="evidence">&times;</button>
       </div>
       <div id="evidenceForm" class="form-group">
-        <label>Claim</label>
+        <label for="evidenceClaim">Claim</label>
         <textarea id="evidenceClaim" maxlength="500" placeholder="Enter your claim..." class="u-h-80"></textarea>
         <div class="claim-counter" data-for="evidenceClaim" aria-live="polite"></div>
-        <label class="u-mt-1">LLM Key (optional)</label>
+        <label class="u-mt-1" for="evidenceKey">LLM Key (optional)</label>
         <input type="password" id="evidenceKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="evidenceKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
         <button type="button" class="auth-btn u-mt-05" id="evidenceKeyClear">Clear key</button>
-        <label class="u-mt-1">Provider</label>
+        <label class="u-mt-1" for="evidenceProvider">Provider</label>
         <select id="evidenceProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1243,11 +1243,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label class="u-mt-1">Model (optional)</label>
+        <label class="u-mt-1" for="evidenceModel">Model (optional)</label>
         <input type="text" id="evidenceModel" placeholder="provider default" autocomplete="off" list="evidenceModelOptions">
         <datalist id="evidenceModelOptions"></datalist>
         <div class="model-hint" id="evidenceModelHint"></div>
-        <label class="u-mt-1">Limit (studies)</label>
+        <label class="u-mt-1" for="evidenceLimit">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="evidenceLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="evidenceLimitMark"></span>
@@ -1284,18 +1284,18 @@
         <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="compare">&times;</button>
       </div>
       <div id="compareForm" class="form-group">
-        <label>Claim 1</label>
+        <label for="compareClaim1">Claim 1</label>
         <textarea id="compareClaim1" maxlength="500" placeholder="Enter first claim..." class="u-h-70"></textarea>
         <div class="claim-counter" data-for="compareClaim1" aria-live="polite"></div>
-        <label class="u-mt-1">Claim 2</label>
+        <label class="u-mt-1" for="compareClaim2">Claim 2</label>
         <textarea id="compareClaim2" maxlength="500" placeholder="Enter second claim..." class="u-h-70"></textarea>
         <div class="claim-counter" data-for="compareClaim2" aria-live="polite"></div>
-        <label class="u-mt-1">LLM Key (optional)</label>
+        <label class="u-mt-1" for="compareKey">LLM Key (optional)</label>
         <input type="password" id="compareKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="compareKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
         <button type="button" class="auth-btn u-mt-05" id="compareKeyClear">Clear key</button>
-        <label class="u-mt-1">Provider</label>
+        <label class="u-mt-1" for="compareProvider">Provider</label>
         <select id="compareProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1315,11 +1315,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label class="u-mt-1">Model (optional)</label>
+        <label class="u-mt-1" for="compareModel">Model (optional)</label>
         <input type="text" id="compareModel" placeholder="provider default" autocomplete="off" list="compareModelOptions">
         <datalist id="compareModelOptions"></datalist>
         <div class="model-hint" id="compareModelHint"></div>
-        <label class="u-mt-1">Limit (studies)</label>
+        <label class="u-mt-1" for="compareLimit">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="compareLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="compareLimitMark"></span>
@@ -1356,15 +1356,15 @@
         <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="gaps">&times;</button>
       </div>
       <div id="gapsForm" class="form-group">
-        <label>Claim</label>
+        <label for="gapsClaim">Claim</label>
         <textarea id="gapsClaim" maxlength="500" placeholder="Enter your claim..." class="u-h-80"></textarea>
         <div class="claim-counter" data-for="gapsClaim" aria-live="polite"></div>
-        <label class="u-mt-1">LLM Key (optional)</label>
+        <label class="u-mt-1" for="gapsKey">LLM Key (optional)</label>
         <input type="password" id="gapsKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="gapsKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
         <button type="button" class="auth-btn u-mt-05" id="gapsKeyClear">Clear key</button>
-        <label class="u-mt-1">Provider</label>
+        <label class="u-mt-1" for="gapsProvider">Provider</label>
         <select id="gapsProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1384,11 +1384,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label class="u-mt-1">Model (optional)</label>
+        <label class="u-mt-1" for="gapsModel">Model (optional)</label>
         <input type="text" id="gapsModel" placeholder="provider default" autocomplete="off" list="gapsModelOptions">
         <datalist id="gapsModelOptions"></datalist>
         <div class="model-hint" id="gapsModelHint"></div>
-        <label class="u-mt-1">Limit (studies)</label>
+        <label class="u-mt-1" for="gapsLimit">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="gapsLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="gapsLimitMark"></span>
@@ -1425,15 +1425,15 @@
         <button type="button" class="close-btn" aria-label="Close" data-action="closeModal" data-endpoint="controversies">&times;</button>
       </div>
       <div id="controversiesForm" class="form-group">
-        <label>Claim</label>
+        <label for="controversiesClaim">Claim</label>
         <textarea id="controversiesClaim" maxlength="500" placeholder="Enter your claim..." class="u-h-80"></textarea>
         <div class="claim-counter" data-for="controversiesClaim" aria-live="polite"></div>
-        <label class="u-mt-1">LLM Key (optional)</label>
+        <label class="u-mt-1" for="controversiesKey">LLM Key (optional)</label>
         <input type="password" id="controversiesKey" placeholder="sk-ant-... for AI-assisted mode">
         <label class="u-check-row"><input type="checkbox" id="controversiesKeyRemember" class="u-w-auto"> Remember this key on this browser</label>
         <div class="model-hint">Stored in this browser's local storage. Anyone with access to this browser profile, or any script on this page, could read it. Use a key you can revoke.</div>
         <button type="button" class="auth-btn u-mt-05" id="controversiesKeyClear">Clear key</button>
-        <label class="u-mt-1">Provider</label>
+        <label class="u-mt-1" for="controversiesProvider">Provider</label>
         <select id="controversiesProvider">
           <option value="">Heuristic (default)</option>
           <optgroup label="⭐ Recommended">
@@ -1453,11 +1453,11 @@
             <option value="xai">xAI Grok</option>
           </optgroup>
         </select>
-        <label class="u-mt-1">Model (optional)</label>
+        <label class="u-mt-1" for="controversiesModel">Model (optional)</label>
         <input type="text" id="controversiesModel" placeholder="provider default" autocomplete="off" list="controversiesModelOptions">
         <datalist id="controversiesModelOptions"></datalist>
         <div class="model-hint" id="controversiesModelHint"></div>
-        <label class="u-mt-1">Limit (studies)</label>
+        <label class="u-mt-1" for="controversiesLimit">Limit (studies)</label>
         <div class="limit-wrap">
           <input type="range" id="controversiesLimit" class="limit-slider" min="10" max="100" step="5" value="25">
           <span class="limit-zone-mark" id="controversiesLimitMark"></span>
@@ -2440,7 +2440,7 @@
         '<span class="dl-group">' +
         // Line 1: quick filter (when present) + abstracts toggle (study lists)
         '<span class="dl-line">' +
-        (withFilter ? '<input class="qfilter" type="text" placeholder="🔍 Filter results…">' : '') +
+        (withFilter ? '<input class="qfilter" type="text" aria-label="Filter results" placeholder="🔍 Filter results…">' : '') +
         absToggle +
         '</span>' +
         // Line 2: the Export menu button and its panel
