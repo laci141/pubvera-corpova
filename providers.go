@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // llmTimeout bounds the single synthesis call; it must fit inside the 120s
@@ -848,14 +849,14 @@ func parseSynthesis(text string) (*llmSynthesis, error) {
 			continue
 		}
 		if len(t) > 300 {
-			t = t[:300]
+			t = truncateUTF8(t, 300)
 		}
 		if len(r) > 200 {
-			r = r[:200]
+			r = truncateUTF8(r, 200)
 		}
 		d := strings.TrimSpace(e.DOI)
 		if len(d) > 200 {
-			d = d[:200]
+			d = truncateUTF8(d, 200)
 		}
 		cleaned = append(cleaned, excludedStudy{Title: t, Reason: r, DOI: d})
 		if len(cleaned) >= 20 {
@@ -898,13 +899,13 @@ func cleanStudyStances(in []studyStance) []studyStance {
 		r := strings.TrimSpace(s.Reason)
 		d := strings.TrimSpace(s.DOI)
 		if len(t) > 300 {
-			t = t[:300]
+			t = truncateUTF8(t, 300)
 		}
 		if len(r) > 200 {
-			r = r[:200]
+			r = truncateUTF8(r, 200)
 		}
 		if len(d) > 200 {
-			d = d[:200]
+			d = truncateUTF8(d, 200)
 		}
 		out = append(out, studyStance{Title: t, DOI: d, Claim: c, Stance: st, Reason: r})
 		if len(out) >= maxStudyStances {
@@ -1148,6 +1149,20 @@ func selfContradictingExclusion(reason string) bool {
 	return keptAnyway.MatchString(reason)
 }
 
+// truncateUTF8 cuts s to at most maxBytes bytes without splitting a multi-byte
+// UTF-8 character: a plain s[:n] can end inside one and leave invalid UTF-8,
+// which JSON encodes as U+FFFD.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
 // sanitizeLLMError makes an upstream diagnostic safe for clients and logs:
 // exact key redaction, control bytes stripped, hard length cap.
 func sanitizeLLMError(s, key string) string {
@@ -1160,7 +1175,7 @@ func sanitizeLLMError(s, key string) string {
 	}, s)
 	s = strings.ReplaceAll(s, "\n", " ")
 	if len(s) > 240 {
-		s = s[:240] + "…"
+		s = truncateUTF8(s, 240) + "…"
 	}
 	return strings.TrimSpace(s)
 }
